@@ -1,3 +1,231 @@
-from django.shortcuts import render
+from __future__ import annotations
 
-# Create your views here.
+import json
+import random
+from typing import Any
+
+from django.contrib import messages
+from django.contrib.auth import login
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import UserCreationForm
+from django.db import transaction
+from django.db.models import Q
+from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
+
+from .models import Game, GameMove, PlayerStats
+from .services import (
+    GameError,
+    apply_move,
+    create_roll,
+    finish_blocked_turn,
+    serialize_game,
+    undo_last_move,
+)
+
+
+def signup(request: HttpRequest) -> HttpResponse:
+    """Register a new user through Django's standard auth form."""
+    if request.user.is_authenticated:
+        return redirect("backgammon:game_list")
+
+    form = UserCreationForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        user = form.save()
+        login(request, user)
+        return redirect("backgammon:game_list")
+    return render(request, "registration/signup.html", {"form": form})
+
+
+@login_required
+def game_list(request: HttpRequest) -> HttpResponse:
+    """Render the lobby with the user's games, open games, and stats."""
+    games = Game.objects.select_related(
+        "white_player", "black_player", "current_player", "winner"
+    )
+    my_games = games.filter(
+        Q(white_player=request.user) | Q(black_player=request.user)
+    )[:20]
+    open_games = games.filter(status=Game.Status.WAITING).exclude(
+        white_player=request.user
+    )[:20]
+    stats = PlayerStats.objects.filter(user=request.user).first()
+    return render(
+        request,
+        "backgammon/game_list.html",
+        {"my_games": my_games, "open_games": open_games, "stats": stats},
+    )
+
+
+@login_required
+@require_POST
+def create_game(request: HttpRequest) -> HttpResponse:
+    """Create a waiting game with the current user as white."""
+    game = Game.objects.create(white_player=request.user)
+    messages.success(request, "Игра создана. Теперь нужен второй игрок.")
+    return redirect("backgammon:game_detail", pk=game.pk)
+
+
+def can_view_game(game: Game, user: Any) -> bool:
+    """Return whether a user may open a game detail page."""
+    return game.status == Game.Status.WAITING or bool(game.color_for(user))
+
+
+@login_required
+def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
+    """Render the playable board for a game."""
+    game = get_object_or_404(
+        Game.objects.select_related(
+            "white_player", "black_player", "current_player", "winner"
+        ),
+        pk=pk,
+    )
+    if not can_view_game(game, request.user):
+        messages.error(request, "Эта игра доступна только участникам.")
+        return redirect("backgammon:game_list")
+    return render(request, "backgammon/game_detail.html", {"game": game})
+
+
+@login_required
+@require_POST
+def join_game(request: HttpRequest, pk: int) -> HttpResponse:
+    """Seat the current user as black and choose the starting player."""
+    with transaction.atomic():
+        game = get_object_or_404(Game.objects.select_for_update(), pk=pk)
+        if game.status != Game.Status.WAITING or game.black_player:
+            messages.error(request, "К этой игре уже нельзя присоединиться.")
+            return redirect("backgammon:game_detail", pk=game.pk)
+        if game.white_player_id == request.user.id:
+            messages.error(request, "Нельзя играть против себя.")
+            return redirect("backgammon:game_detail", pk=game.pk)
+
+        white_die = black_die = 0
+        while white_die == black_die:
+            white_die = random.randint(1, 6)
+            black_die = random.randint(1, 6)
+        game.black_player = request.user
+        game.current_player = (
+            game.white_player if white_die > black_die else request.user
+        )
+        game.status = Game.Status.ACTIVE
+        game.save(
+            update_fields=["black_player", "current_player", "status", "updated_at"]
+        )
+        GameMove.objects.create(
+            game=game,
+            player=request.user,
+            action=GameMove.Action.JOIN,
+            dice=[white_die, black_die],
+            board=game.board,
+        )
+
+    messages.success(request, "Вы присоединились к игре.")
+    return redirect("backgammon:game_detail", pk=game.pk)
+
+
+def json_error(message: str, status: int = 400) -> JsonResponse:
+    """Return the standard JSON error shape used by game endpoints."""
+    return JsonResponse({"ok": False, "error": message}, status=status)
+
+
+def get_json_body(request: HttpRequest) -> dict[str, Any]:
+    """Decode a JSON request body into a dictionary."""
+    if not request.body:
+        return {}
+    try:
+        return json.loads(request.body.decode("utf-8"))
+    except json.JSONDecodeError:
+        raise GameError("Некорректный JSON.")
+
+
+def get_participant_game(pk: int, user: Any, for_update: bool = False) -> Game:
+    """Fetch a game and ensure the user is one of its players."""
+    queryset = Game.objects.select_related(
+        "white_player", "black_player", "current_player", "winner"
+    )
+    if for_update:
+        queryset = queryset.select_for_update()
+    game = get_object_or_404(queryset, pk=pk)
+    if not game.color_for(user):
+        raise GameError("Вы не участвуете в этой игре.")
+    return game
+
+
+@login_required
+def game_state(request: HttpRequest, pk: int) -> JsonResponse:
+    """Return the current serialized game state for polling."""
+    game = get_object_or_404(
+        Game.objects.select_related(
+            "white_player", "black_player", "current_player", "winner"
+        ),
+        pk=pk,
+    )
+    if not can_view_game(game, request.user):
+        return json_error("Эта игра доступна только участникам.", status=403)
+    return JsonResponse({"ok": True, "game": serialize_game(game, request.user)})
+
+
+@login_required
+@require_POST
+def roll(request: HttpRequest, pk: int) -> JsonResponse:
+    """Roll dice for the current player."""
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            create_roll(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def move(request: HttpRequest, pk: int) -> JsonResponse:
+    """Apply one checker move chosen on the board."""
+    try:
+        data = get_json_body(request)
+        source_point = int(data.get("source"))
+        distance = int(data.get("distance"))
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            apply_move(game, request.user, source_point, distance)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except TypeError, ValueError:
+        return json_error("Некорректные параметры хода.")
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def undo_move(request: HttpRequest, pk: int) -> JsonResponse:
+    """Undo the current player's latest checker move."""
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            undo_last_move(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def end_turn(request: HttpRequest, pk: int) -> JsonResponse:
+    """Explicitly finish a turn after all legal moves are exhausted."""
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            finish_blocked_turn(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})

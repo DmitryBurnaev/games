@@ -1,0 +1,72 @@
+{% extends 'backgammon/base.html' %}
+{% load static %}
+
+{% block title %}Игра #{{ game.pk }} · Длинные нарды{% endblock %}
+
+{% block content %}
+<div
+    id="game-app"
+    data-state-url="{% url 'backgammon:game_state' game.pk %}"
+    data-roll-url="{% url 'backgammon:roll' game.pk %}"
+    data-move-url="{% url 'backgammon:move' game.pk %}"
+    data-undo-url="{% url 'backgammon:undo_move' game.pk %}"
+    data-end-turn-url="{% url 'backgammon:end_turn' game.pk %}"
+>
+    {% csrf_token %}
+
+    <div class="game-shell">
+        <aside class="game-side">
+            <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                <div>
+                    <h1 class="h4 mb-1">Игра #{{ game.pk }}</h1>
+                    <div id="status-line" class="text-secondary"></div>
+                </div>
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'backgammon:game_list' %}">К списку</a>
+            </div>
+
+            {% if game.status == 'waiting' and game.white_player != user %}
+                <form method="post" action="{% url 'backgammon:join_game' game.pk %}" class="mb-3">
+                    {% csrf_token %}
+                    <button class="btn btn-primary w-100" type="submit">Присоединиться</button>
+                </form>
+            {% endif %}
+
+            <div class="player-strip mb-3">
+                <div>
+                    <span class="checker-dot checker-white"></span>
+                    <span id="white-player">Белые</span>
+                </div>
+                <div>
+                    <span class="checker-dot checker-black"></span>
+                    <span id="black-player">Черные</span>
+                </div>
+            </div>
+
+            <div class="dice-panel mb-3">
+                <div class="text-secondary small mb-1">Кубики</div>
+                <div id="dice-row" class="dice-row"></div>
+                <div id="remaining-row" class="small text-secondary mt-2"></div>
+            </div>
+
+            <div class="d-grid gap-2 mb-3">
+                <button id="roll-button" class="btn btn-primary" type="button">Бросить кубики</button>
+                <button id="undo-button" class="btn btn-outline-warning" type="button">Отменить мой ход</button>
+                <button id="end-turn-button" class="btn btn-outline-secondary" type="button">Завершить ход</button>
+            </div>
+
+            <div id="move-panel" class="move-panel"></div>
+            <div id="error-line" class="text-danger small mt-3"></div>
+        </aside>
+
+        <section class="board-wrap">
+            <div id="board" class="board" aria-label="Игровая доска"></div>
+            <div class="off-board">
+                <div>Выведено белых: <strong id="white-off">0</strong></div>
+                <div>Выведено черных: <strong id="black-off">0</strong></div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<script src="{% static 'backgammon/game.js' %}?v=13"></script>
+{% endblock %}
