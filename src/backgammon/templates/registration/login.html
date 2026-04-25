@@ -1,0 +1,17 @@
+{% extends 'backgammon/base.html' %}
+
+{% block title %}Вход · Длинные нарды{% endblock %}
+
+{% block content %}
+<div class="auth-panel mx-auto">
+    <h1 class="h4 mb-3">Вход</h1>
+    <form method="post" class="vstack gap-3">
+        {% csrf_token %}
+        {{ form.as_div }}
+        <button class="btn btn-primary" type="submit">Войти</button>
+    </form>
+    <div class="mt-3">
+        <a href="{% url 'backgammon:signup' %}">Создать аккаунт</a>
+    </div>
+</div>
+{% endblock %}
