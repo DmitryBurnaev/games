@@ -4,6 +4,7 @@ import json
 import random
 from typing import Any
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
@@ -18,6 +19,8 @@ from .models import Game, GameMove, PlayerStats
 from .services import (
     GameError,
     apply_move,
+    arrange_checkers_for_victory_test,
+    arrange_checkers_in_home,
     create_roll,
     finish_blocked_turn,
     serialize_game,
@@ -84,7 +87,14 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
     if not can_view_game(game, request.user):
         messages.error(request, "Эта игра доступна только участникам.")
         return redirect("backgammon:game_list")
-    return render(request, "backgammon/game_detail.html", {"game": game})
+    return render(
+        request,
+        "backgammon/game_detail.html",
+        {
+            "game": game,
+            "debug_game_tools": settings.BACKGAMMON_DEBUG_TOOLS,
+        },
+    )
 
 
 @login_required
@@ -196,6 +206,40 @@ def move(request: HttpRequest, pk: int) -> JsonResponse:
             payload = serialize_game(game, request.user)
     except TypeError, ValueError:
         return json_error("Некорректные параметры хода.")
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def prepare_bear_off(request: HttpRequest, pk: int) -> JsonResponse:
+    """Move the current user's checkers into home for finish testing."""
+    if not settings.BACKGAMMON_DEBUG_TOOLS:
+        return json_error("Отладочные игровые инструменты выключены.", status=403)
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            arrange_checkers_in_home(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def prepare_victory(request: HttpRequest, pk: int) -> JsonResponse:
+    """Prepare a near-finished board for testing victory animation."""
+    if not settings.BACKGAMMON_DEBUG_TOOLS:
+        return json_error("Отладочные игровые инструменты выключены.", status=403)
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            arrange_checkers_for_victory_test(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})

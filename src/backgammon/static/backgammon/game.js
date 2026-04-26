@@ -9,6 +9,10 @@
     const moveUrl = app.dataset.moveUrl;
     const undoUrl = app.dataset.undoUrl;
     const endTurnUrl = app.dataset.endTurnUrl;
+    const prepareBearOffUrl = app.dataset.prepareBearOffUrl;
+    const prepareVictoryUrl = app.dataset.prepareVictoryUrl;
+    const debugGameTools = Boolean(prepareBearOffUrl && prepareVictoryUrl);
+    const domovoyImages = [app.dataset.domovoyOne, app.dataset.domovoyTwo].filter(Boolean);
     const csrfToken = app.querySelector('[name=csrfmiddlewaretoken]').value;
 
     const boardEl = document.getElementById('board');
@@ -21,6 +25,10 @@
     const rollButton = document.getElementById('roll-button');
     const undoButton = document.getElementById('undo-button');
     const endTurnButton = document.getElementById('end-turn-button');
+    const prepareBearOffButton = document.getElementById('prepare-bear-off-button');
+    const prepareVictoryButton = document.getElementById('prepare-victory-button');
+    const domovoyPop = document.getElementById('domovoy-pop');
+    const domovoyImage = document.getElementById('domovoy-image');
     const whitePlayer = document.getElementById('white-player');
     const blackPlayer = document.getElementById('black-player');
     const whiteOff = document.getElementById('white-off');
@@ -32,6 +40,7 @@
     let diceAnimating = false;
     let diceAnimationStartedAt = 0;
     let lastDiceKey = '';
+    let lastVictoryKey = '';
     const minDiceRollMs = 1100;
 
     function playerName(player) {
@@ -40,6 +49,18 @@
 
     function showError(message) {
         errorLine.textContent = message || '';
+    }
+
+    function victoryTypeName(type) {
+        if (type === 'mars') {
+            return 'Марс';
+        }
+        return '';
+    }
+
+    function victoryLabel(winner, type) {
+        const typeName = victoryTypeName(type);
+        return typeName ? `${winner} · ${typeName}` : winner;
     }
 
     async function requestJson(url, options) {
@@ -67,14 +88,13 @@
         }
         if (game.status === 'finished') {
             const winner = playerName(game.winner);
-            const type = game.victory_type === 'mars' ? 'марс' : 'оин';
-            return `Победил ${winner}: ${type}`;
+            return `Победитель: ${victoryLabel(winner, game.victory_type)}`;
         }
         if (game.current_player) {
             if (isViewerTurn()) {
                 return 'Ваш ход!';
             }
-            return `... 🤔 ждем когда сходит ${game.current_player.username}`;
+            return `🤔 жду хода ${game.current_player.username}`;
         }
         return 'Игра активна';
     }
@@ -83,12 +103,66 @@
         if (!values || !values.length) {
             return '<span class="text-secondary small">не брошены</span>';
         }
-        const className = animated ? 'die rolling' : 'die';
-        return values.map((value) => `<span class="${className}">${value}</span>`).join('');
+        const remainingCounts = {};
+        if (!animated && Array.isArray(game && game.remaining_moves)) {
+            game.remaining_moves.forEach((value) => {
+                remainingCounts[value] = (remainingCounts[value] || 0) + 1;
+            });
+        }
+        const usedCounts = {};
+        return values.map((value) => {
+            let className = animated ? 'die rolling' : 'die';
+            const used = usedCounts[value] || 0;
+            usedCounts[value] = used + 1;
+            if (!animated && remainingCounts[value] && used < remainingCounts[value]) {
+                className += ' available';
+            }
+            return `<span class="${className}">${value}</span>`;
+        }).join('');
     }
 
     function randomDice() {
         return [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+    }
+
+    function showDomovoy() {
+        if (!domovoyPop || !domovoyImage || !domovoyImages.length) {
+            return;
+        }
+        const image = domovoyImages[Math.floor(Math.random() * domovoyImages.length)];
+        domovoyImage.src = image;
+        domovoyPop.classList.remove('show');
+        window.requestAnimationFrame(() => {
+            domovoyPop.classList.add('show');
+        });
+        window.setTimeout(() => {
+            domovoyPop.classList.remove('show');
+        }, 3800);
+    }
+
+    function victoryBannerHtml() {
+        if (!game || game.status !== 'finished') {
+            return '';
+        }
+        const winner = playerName(game.winner);
+        return `
+            <div class="victory-banner">
+                <div class="victory-title">Победа!</div>
+                <div class="victory-subtitle">${victoryLabel(winner, game.victory_type)}</div>
+            </div>
+        `;
+    }
+
+    function maybeShowVictoryAnimation() {
+        if (!game || game.status !== 'finished' || !game.winner) {
+            return;
+        }
+        const victoryKey = `${game.id}:${game.winner.id}:${game.victory_type}`;
+        if (lastVictoryKey === victoryKey) {
+            return;
+        }
+        lastVictoryKey = victoryKey;
+        showDomovoy();
     }
 
     function startDiceAnimation() {
@@ -282,6 +356,7 @@
 
         boardEl.appendChild(top);
         boardEl.appendChild(bottom);
+        boardEl.insertAdjacentHTML('beforeend', victoryBannerHtml());
     }
 
     function renderMoves() {
@@ -354,11 +429,18 @@
         rollButton.disabled = !game.can_roll || diceAnimating;
         undoButton.disabled = !game.can_undo || diceAnimating;
         endTurnButton.disabled = !game.can_end_turn || diceAnimating;
+        if (prepareBearOffButton) {
+            prepareBearOffButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
+        }
+        if (prepareVictoryButton) {
+            prepareVictoryButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
+        }
         if (selectedSource !== null && !legalSources().has(selectedSource)) {
             selectedSource = null;
         }
         renderBoard();
         renderMoves();
+        maybeShowVictoryAnimation();
     }
 
     async function loadState() {
@@ -378,6 +460,9 @@
             await finishDiceAnimation(nextGame.dice);
             game = nextGame;
             lastDiceKey = JSON.stringify(game.dice || []);
+            if (game.dice.length === 2 && game.dice[0] === game.dice[1]) {
+                showDomovoy();
+            }
             selectedSource = null;
             render();
         } catch (error) {
@@ -407,6 +492,34 @@
             showError(error.message);
         }
     });
+
+    if (debugGameTools && prepareBearOffButton) {
+        prepareBearOffButton.addEventListener('click', async () => {
+            try {
+                showError('');
+                game = await requestJson(prepareBearOffUrl, { method: 'POST' });
+                lastDiceKey = JSON.stringify(game.dice || []);
+                selectedSource = null;
+                render();
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+    }
+
+    if (debugGameTools && prepareVictoryButton) {
+        prepareVictoryButton.addEventListener('click', async () => {
+            try {
+                showError('');
+                game = await requestJson(prepareVictoryUrl, { method: 'POST' });
+                lastDiceKey = JSON.stringify(game.dice || []);
+                selectedSource = null;
+                render();
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+    }
 
     loadState();
     window.setInterval(loadState, 2500);
