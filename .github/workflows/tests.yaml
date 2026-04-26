@@ -18,6 +18,9 @@ jobs:
           cp .env.template .env
           echo "DJANGO_SECRET_KEY=test-secret-key" >> .env
           echo "DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,testserver" >> .env
+          mkdir -p .data
+          sudo chown 1007:1007 .data
+          chmod 770 .data
           env >> .env
 
       - name: Build images

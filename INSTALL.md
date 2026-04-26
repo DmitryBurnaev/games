@@ -28,6 +28,7 @@ usermod -a -G docker games-srv
 chmod -R 660 ${TARGET_DIR}
 chmod -R ug+x ${TARGET_DIR}/bin
 chmod ug+x ${TARGET_DIR} ${TARGET_DIR}/.data
+chmod ug+w ${TARGET_DIR}/.data
 ```
 
 After the first CI delivery, prepare environment values:
@@ -49,6 +50,8 @@ Required production values:
 
 The SQLite database is stored on the host at `${TARGET_DIR}/.data/db.sqlite3`
 through the Docker bind mount `${TARGET_DIR}/.data:/app/.data`.
+The app container runs as UID/GID `1007`, so `${TARGET_DIR}/.data` must be writable
+by that ID. The commands above create the directory under the matching service user.
 
 Create the systemd service:
 
