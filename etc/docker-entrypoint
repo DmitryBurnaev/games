@@ -30,12 +30,19 @@ check_required_env() {
   for var in $required_env_vars; do
     check_env_var "$var"
   done
-  mkdir -p "$(dirname "${SQLITE_PATH}")"
+}
+
+prepare_sqlite_dir() {
+  sqlite_dir="$(dirname "${SQLITE_PATH}")"
+  print_caption "Prepare SQLite data directory"
+  mkdir -p "${sqlite_dir}"
+  echo "SQLite data directory is ready (${sqlite_dir})"
 }
 
 case "${APP_SERVICE}" in
   app)
     check_required_env
+    prepare_sqlite_dir
     print_caption "Run Django migrations"
     python src/manage.py migrate --noinput
     print_caption "Start app"
@@ -43,6 +50,7 @@ case "${APP_SERVICE}" in
     ;;
   test)
     check_required_env
+    prepare_sqlite_dir
     print_caption "Django check"
     python src/manage.py check
     print_caption "Run tests"
@@ -50,6 +58,7 @@ case "${APP_SERVICE}" in
     ;;
   lint)
     check_required_env
+    prepare_sqlite_dir
     print_caption "Black check"
     black --check --workers 1 .
     print_caption "Django check"
