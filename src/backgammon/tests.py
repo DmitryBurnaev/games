@@ -15,6 +15,58 @@ from .services import (
 )
 
 
+class UserRegistrationTests(TestCase):
+    """Coverage for the public signup gate."""
+
+    @override_settings(ALLOW_USER_REGISTRATION=True)
+    def test_signup_creates_user_when_registration_is_open(self) -> None:
+        """The signup view creates and logs in a user when enabled."""
+        User = get_user_model()
+
+        response = self.client.post(
+            reverse("backgammon:signup"),
+            {
+                "username": "new-player",
+                "password1": "VeryStrongPassword123!",
+                "password2": "VeryStrongPassword123!",
+            },
+        )
+
+        self.assertRedirects(response, reverse("backgammon:game_list"))
+        self.assertTrue(User.objects.filter(username="new-player").exists())
+
+    @override_settings(ALLOW_USER_REGISTRATION=False)
+    def test_signup_does_not_create_user_when_registration_is_closed(self) -> None:
+        """The signup view rejects direct POSTs when registration is disabled."""
+        User = get_user_model()
+
+        response = self.client.post(
+            reverse("backgammon:signup"),
+            {
+                "username": "new-player",
+                "password1": "VeryStrongPassword123!",
+                "password2": "VeryStrongPassword123!",
+            },
+        )
+
+        self.assertRedirects(response, reverse("login"))
+        self.assertFalse(User.objects.filter(username="new-player").exists())
+
+    @override_settings(ALLOW_USER_REGISTRATION=False)
+    def test_login_page_hides_signup_link_when_registration_is_closed(self) -> None:
+        """The login template does not advertise disabled signup."""
+        response = self.client.get(reverse("login"))
+
+        self.assertNotContains(response, "Создать аккаунт")
+
+    @override_settings(ALLOW_USER_REGISTRATION=True)
+    def test_login_page_shows_signup_link_when_registration_is_open(self) -> None:
+        """The login template advertises signup when the feature is enabled."""
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, "Создать аккаунт")
+
+
 class GameRulesTests(TestCase):
     """Regression coverage for long-backgammon game rules and turn flow."""
 

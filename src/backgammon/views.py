@@ -30,8 +30,11 @@ from .services import (
 
 def signup(request: HttpRequest) -> HttpResponse:
     """Register a new user through Django's standard auth form."""
-    if request.user.is_authenticated:
+    if not request.user.is_anonymous:
         return redirect("backgammon:game_list")
+    if not settings.ALLOW_USER_REGISTRATION:
+        messages.warning(request, "Регистрация сейчас закрыта.")
+        return redirect("login")
 
     form = UserCreationForm(request.POST or None)
     if request.method == "POST" and form.is_valid():

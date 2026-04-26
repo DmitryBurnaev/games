@@ -106,6 +106,7 @@ Runtime variables are defined in `.env.template`.
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | For HTTPS/domain forms | empty                                   | Comma-separated trusted origins, for example `https://games.example.com`. |
 | `DJANGO_USE_X_FORWARDED_HOST` | No                     | `false`                                 | Whether Django should trust `X-Forwarded-Host`.                           |
 | `BACKGAMMON_DEBUG_TOOLS`      | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                        |
+| `ALLOW_USER_REGISTRATION`     | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.   |
 | `SQLITE_PATH`                 | Yes for Docker/prod    | `/app/.data/db.sqlite3` in template     | SQLite database path inside the container.                                |
 
 Local non-Docker runs can omit `.env`; settings default to `.data/db.sqlite3`.
@@ -123,6 +124,7 @@ DJANGO_ALLOWED_HOSTS=games.example.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://games.example.com
 DJANGO_USE_X_FORWARDED_HOST=false
 BACKGAMMON_DEBUG_TOOLS=false
+ALLOW_USER_REGISTRATION=false
 
 SQLITE_PATH=/app/.data/db.sqlite3
 ```

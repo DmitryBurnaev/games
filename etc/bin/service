@@ -79,6 +79,12 @@ check_health() {
     fi
 }
 
+create_superuser() {
+    echo "Creating Django superuser in the app container..."
+    cd "${WORKING_DIR}"
+    docker compose exec app python src/manage.py createsuperuser
+}
+
 case "$1" in
     start)
         sudo systemctl start $SERVICE_NAME
@@ -119,16 +125,20 @@ case "$1" in
     health)
         check_health
         ;;
+    create-admin)
+        create_superuser
+        ;;
     *)
         echo "Usage: $0 COMMAND [OPTIONS]"
         echo ""
         echo "Commands:"
-        echo "  start [--logs]    Start service"
-        echo "  stop              Stop service"
-        echo "  restart [--logs]  Restart service"
-        echo "  status [--logs]   Show service status"
-        echo "  logs [OPTIONS]    Show service logs"
-        echo "  health            Check service health"
+        echo "  start [--logs]     Start service"
+        echo "  stop               Stop service"
+        echo "  restart [--logs]   Restart service"
+        echo "  status [--logs]    Show service status"
+        echo "  logs [OPTIONS]     Show service logs"
+        echo "  health             Check service health"
+        echo "  create-admin       Create a Django superuser for /gadm/"
         echo ""
         echo "Log options:"
         echo "  --tail N          Show last N lines"
