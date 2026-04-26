@@ -1,0 +1,207 @@
+name: Release
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+env:
+  REGISTRY: ghcr.io
+  DOCKER_IMAGE_NAME: ${{ github.repository }}
+  # DEBUG_DOCKER_IMAGE_TAG: 0.1.0-debug
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.names.outputs.image_tag }}
+      image_name_base: ${{ steps.names.outputs.image_name_base }}
+      image_name_full: ${{ steps.names.outputs.image_name_full }}
+      image_name_latest: ${{ steps.names.outputs.image_name_latest }}
+
+    steps:
+      - name: Prepare names
+        id: names
+        run: |
+          IMAGE_NAME_LOWERCASED=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            IMAGE_TAG="${{ github.ref_name }}"
+          else
+            IMAGE_TAG="${{ env.DEBUG_DOCKER_IMAGE_TAG }}"
+          fi
+          if [[ "${IMAGE_TAG}" == v* ]]; then
+            IMAGE_TAG="${IMAGE_TAG#v}"
+          fi
+          IMAGE_NAME_BASE="${{ env.REGISTRY }}/${IMAGE_NAME_LOWERCASED}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image_name_base=${IMAGE_NAME_BASE}" >> $GITHUB_OUTPUT
+          echo "image_name_full=${IMAGE_NAME_BASE}:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "image_name_latest=${IMAGE_NAME_BASE}:latest" >> $GITHUB_OUTPUT
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare .env file
+        run: |
+          cp .env.template .env
+          echo "DJANGO_SECRET_KEY=test-secret-key" >> .env
+          echo "DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,testserver" >> .env
+          env >> .env
+
+      - name: Build image
+        run: docker compose build test
+
+      - name: Run tests
+        run: docker compose up --exit-code-from test test
+
+  build:
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for docker image
+        id: docker-image-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.prepare.outputs.image_name_base }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.prepare.outputs.image_tag }}
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: service
+          push: true
+          tags: ${{ steps.docker-image-meta.outputs.tags }}
+          labels: ${{ steps.docker-image-meta.outputs.labels }}
+
+  verify:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify docker images
+        run: |
+          DOCKER_IMAGE="${{ needs.prepare.outputs.image_name_full }}"
+          docker manifest inspect "${DOCKER_IMAGE}" || exit 1
+
+          DOCKER_IMAGE_LATEST="${{ needs.prepare.outputs.image_name_latest }}"
+          docker manifest inspect "${DOCKER_IMAGE_LATEST}" || exit 1
+
+  create-release:
+    needs: [prepare, build, verify]
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release metadata
+        id: release-meta
+        run: |
+          DOCKER_IMAGE="${{ needs.prepare.outputs.image_name_full }}"
+          DOCKER_IMAGE_LATEST="${{ needs.prepare.outputs.image_name_latest }}"
+          DOCKER_IMAGE_TAG="${{ needs.prepare.outputs.image_tag }}"
+
+          cat > release-metadata.json << EOF
+          {
+            "version": "${DOCKER_IMAGE_TAG}",
+            "docker_image": "${DOCKER_IMAGE}",
+            "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+          cat > release-body.md << EOF
+          ## Released Image Version ${DOCKER_IMAGE_TAG}
+
+          **Image Versioned:** \`${DOCKER_IMAGE}\`
+          **Image Latest:** \`${DOCKER_IMAGE_LATEST}\`
+          **Pull command:**
+          \`\`\`bash
+          docker pull ${DOCKER_IMAGE}
+          \`\`\`
+          EOF
+
+          echo "metadata_file=release-metadata.json" >> $GITHUB_OUTPUT
+          echo "body_file=release-body.md" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.image_tag }}
+          name: ${{ needs.prepare.outputs.image_tag }}
+          body_path: ${{ steps.release-meta.outputs.body_file }}
+          files: ${{ steps.release-meta.outputs.metadata_file }}
+          draft: false
+          append_body: true
+          prerelease: ${{ contains(github.ref_name, '-') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          make_latest: ${{ !contains(github.ref_name, '-') && !contains(github.ref_name, 'alpha') && !contains(github.ref_name, 'beta') && !contains(github.ref_name, 'rc') }}
+
+  deploy:
+    needs: [verify, prepare]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare SSH file
+        run: |
+          mkdir ~/.ssh
+          echo "${{ secrets.SSH_PKEY }}" > ~/.ssh/id_rsa
+          chmod 400 ~/.ssh/id_rsa
+
+      - name: Delivery Updates
+        run: |
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/docker-compose.yml ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/docker-compose.yml
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/games.service ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/games.service
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/bin/deploy ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/bin/deploy
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/bin/start ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/bin/start
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/bin/stop ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/bin/stop
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/bin/service ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/bin/service
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./.env.template ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/.env.template
+          scp -o StrictHostKeyChecking=no -P ${{ secrets.SSH_PORT }} ./etc/nginx.conf ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${{ secrets.PROD_PROJECT_ROOT }}/nginx.conf
+
+      - name: Deploy
+        uses: appleboy/ssh-action@master
+        env:
+          DEPLOY_MODE: CI
+          CI_DOCKER_IMAGE_NAME: ${{ needs.prepare.outputs.image_name_full }}
+          CI_DOCKER_IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PKEY }}
+          envs: DEPLOY_MODE,CI_DOCKER_IMAGE_NAME,CI_DOCKER_IMAGE_TAG
+          script: |
+            echo "Deploying ${CI_DOCKER_IMAGE_TAG} ('${CI_DOCKER_IMAGE_NAME}')..."
+            cd ${{ secrets.PROD_PROJECT_ROOT }}
+            echo "DOCKER_IMAGE=${CI_DOCKER_IMAGE_NAME}" > .version
+            sh bin/deploy
