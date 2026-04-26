@@ -49,6 +49,7 @@ if not SECRET_KEY:
 BACKGAMMON_DEBUG_TOOLS = os.environ.get(
     "BACKGAMMON_DEBUG_TOOLS", str(DEBUG)
 ).lower() in {"1", "true", "yes", "on"}
+ALLOW_USER_REGISTRATION = env_bool("ALLOW_USER_REGISTRATION", False)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
@@ -92,6 +93,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "backgammon.context_processors.registration",
             ],
         },
     },

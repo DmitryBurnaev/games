@@ -117,6 +117,19 @@ bin/service logs --follow
 bin/service logs --grep error
 ```
 
+Create an admin user after the service is running:
+
+```shell
+bin/service create-admin
+```
+
+The command opens Django's interactive superuser prompt inside the running app
+container. `docker compose exec` allocates an interactive TTY by default, so the
+script does not need an explicit `-it`. Use this account to sign in at `/gadm/`.
+If you enabled the optional Nginx allowlist for `/gadm/`, run the command from
+any SSH session as usual; the IP restriction only applies to browser access
+through Nginx.
+
 ## Nginx
 
 Copy `nginx.conf` to your Nginx site config and edit the domain and port:

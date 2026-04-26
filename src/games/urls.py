@@ -28,5 +28,5 @@ urlpatterns = [
     path("health/", health, name="health"),
     path("", include("backgammon.urls")),
     path("accounts/", include("django.contrib.auth.urls")),
-    path("admin/", admin.site.urls),
+    path("gadm/", admin.site.urls),
 ]
