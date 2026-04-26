@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -24,6 +25,9 @@ SECRET_KEY = "django-insecure-68h_6gfc2i0%bn(4i*r4)lv407+pb^*s5+b@0dofi6o2z71zt4
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
+BACKGAMMON_DEBUG_TOOLS = os.environ.get(
+    "BACKGAMMON_DEBUG_TOOLS", str(DEBUG)
+).lower() in {"1", "true", "yes", "on"}
 
 ALLOWED_HOSTS = []
 
@@ -116,6 +120,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+STATICFILES_DIRS = [BASE_DIR / "assets"]
 
 LOGIN_REDIRECT_URL = "backgammon:game_list"
 LOGOUT_REDIRECT_URL = "login"

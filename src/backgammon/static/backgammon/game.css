@@ -113,6 +113,12 @@ body {
     transform-origin: center;
 }
 
+.die.available {
+    border-color: #198754;
+    background: #e9f8ef;
+    box-shadow: 0 0 0 4px rgba(25, 135, 84, .16), 0 5px 14px rgba(25, 135, 84, .18);
+}
+
 .die.rolling {
     animation: dice-roll .48s linear infinite;
     background: #fff8df;
@@ -142,6 +148,21 @@ body {
     100% {
         transform: rotateX(360deg) rotateY(180deg) rotateZ(0deg) scale(1);
     }
+}
+
+.turn-actions {
+    display: grid;
+    grid-template-columns: 1fr 4fr;
+    gap: .5rem;
+}
+
+.turn-actions .btn {
+    min-height: 38px;
+}
+
+.turn-actions #undo-button {
+    font-size: 1.15rem;
+    line-height: 1;
 }
 
 .board-wrap {
@@ -211,6 +232,39 @@ body {
     grid-template-columns: repeat(12, minmax(42px, 1fr));
     gap: .38rem;
     padding-inline: .12rem;
+}
+
+.victory-banner {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    z-index: 12;
+    min-width: min(520px, 82%);
+    padding: 1rem 1.4rem;
+    transform: translate(-50%, -50%);
+    border: 2px solid rgba(255, 228, 92, .94);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(35, 22, 12, .92), rgba(103, 61, 26, .9)),
+        #4f311b;
+    color: #fff8df;
+    text-align: center;
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 247, 214, .18),
+        0 18px 38px rgba(29, 18, 9, .46),
+        0 0 0 999px rgba(28, 16, 8, .2);
+    pointer-events: none;
+}
+
+.victory-title {
+    font-size: clamp(1.8rem, 4vw, 3.2rem);
+    font-weight: 800;
+}
+
+.victory-subtitle {
+    margin-top: .25rem;
+    font-size: clamp(1rem, 2vw, 1.35rem);
+    font-weight: 600;
 }
 
 .point {
@@ -414,6 +468,31 @@ body {
     gap: 1rem;
     margin-top: .75rem;
     color: #574638;
+}
+
+.domovoy-pop {
+    position: fixed;
+    left: 1rem;
+    bottom: 1rem;
+    z-index: 20;
+    width: min(180px, 34vw);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(18px) scale(.94) rotate(-3deg);
+    transition: opacity .22s ease, transform .28s ease;
+}
+
+.domovoy-pop.show {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(-1deg);
+}
+
+.domovoy-pop img {
+    display: block;
+    width: 100%;
+    border: 5px solid rgba(255, 244, 214, .92);
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(35, 20, 9, .32);
 }
 
 @media (max-width: 900px) {

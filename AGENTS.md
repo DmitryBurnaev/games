@@ -36,6 +36,9 @@ Button state expectations:
 - `Отменить мой ход` is active only during the current player's unfinished rolled turn, and only if the latest action is that player's checker move.
 - `Завершить ход` is active only for the current player after rolling when there are no legal moves left.
 - If the turn is on the opponent side, no control button should be active for the viewer.
+- Debug helper buttons are controlled by `settings.BACKGAMMON_DEBUG_TOOLS`, sourced from the `BACKGAMMON_DEBUG_TOOLS` environment variable. It defaults to Django `DEBUG`; use `0/false/off/no` to hide helpers even in development.
+- `В дом для теста` is a development helper that moves the viewer's checkers into their home area, resets dice, and makes it their turn so bearing-off/final-game mechanics can be tested quickly.
+- `Тест победы` is a development helper that marks 13 viewer checkers borne off, leaves 2 in home, resets dice, and makes it their turn for fast victory-animation testing.
 
 ## Undo Behavior
 
@@ -105,6 +108,9 @@ Visual style:
 - Checkers are volumetric, checker-like discs.
 - Checker diameter is tied to point width (`90%`).
 - Dice rolling animation uses rotation and blurred changing values.
+- Dice values that still have unspent moves are highlighted.
+- When a double is rolled, the UI randomly shows `domovoy-1.jpg` or `domovoy-2.jpg` at bottom-left for a short moment.
+- When the game finishes, the board shows a victory banner and the same random domovoy pop-up.
 - Side panel is green on viewer turn and gray/pulsing while waiting.
 
 ## Data Model Notes

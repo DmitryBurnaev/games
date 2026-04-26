@@ -1,10 +1,13 @@
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.urls import reverse
 
 from .models import Game, PlayerStats
 from .services import (
     GameError,
     apply_move,
+    arrange_checkers_for_victory_test,
+    arrange_checkers_in_home,
     create_roll,
     finish_blocked_turn,
     serialize_game,
@@ -209,3 +212,107 @@ class GameRulesTests(TestCase):
         self.assertEqual(len(white_payload["last_move_markers"]), 1)
         self.assertEqual(white_payload["last_move_markers"][0]["target"], 2)
         self.assertEqual(white_payload["last_move_markers"][0]["count"], 2)
+
+    def test_arrange_checkers_in_home_prepares_bear_off_testing(self) -> None:
+        """The finish-test helper moves only the user into home and resets turn."""
+        game = self.active_game()
+        game.current_player = self.black
+        game.dice = [6, 6]
+        game.remaining_moves = [6, 6, 6, 6]
+        game.has_rolled = True
+        game.save()
+
+        arrange_checkers_in_home(game, self.white)
+        game.refresh_from_db()
+
+        white_points = [
+            point
+            for point, stack in enumerate(game.board)
+            if stack and stack["color"] == Game.Color.WHITE
+        ]
+        self.assertEqual(game.current_player, self.white)
+        self.assertFalse(game.has_rolled)
+        self.assertEqual(game.dice, [])
+        self.assertEqual(game.remaining_moves, [])
+        self.assertTrue(all(18 <= point <= 23 for point in white_points))
+        self.assertEqual(
+            sum(game.board[point]["count"] for point in white_points),
+            15,
+        )
+        self.assertEqual(game.board[12], {"color": Game.Color.BLACK, "count": 15})
+
+    def test_arrange_checkers_for_victory_test_leaves_two_to_bear_off(self) -> None:
+        """The victory-test helper leaves two checkers and thirteen borne off."""
+        game = self.active_game()
+
+        arrange_checkers_for_victory_test(game, self.white)
+        game.refresh_from_db()
+
+        white_points = [
+            point
+            for point, stack in enumerate(game.board)
+            if stack and stack["color"] == Game.Color.WHITE
+        ]
+        self.assertEqual(game.borne_off[Game.Color.WHITE], 13)
+        self.assertEqual(game.current_player, self.white)
+        self.assertEqual(game.dice, [])
+        self.assertEqual(sum(game.board[point]["count"] for point in white_points), 2)
+        self.assertEqual(set(white_points), {22, 23})
+
+    def test_victory_test_position_can_finish_game(self) -> None:
+        """The victory-test position can immediately exercise final scoring."""
+        game = self.active_game()
+        arrange_checkers_for_victory_test(game, self.white)
+        game.dice = [1, 2]
+        game.remaining_moves = [1, 2]
+        game.has_rolled = True
+        game.save()
+
+        apply_move(game, self.white, 23, 1)
+        apply_move(game, self.white, 22, 2)
+        game.refresh_from_db()
+
+        self.assertEqual(game.status, Game.Status.FINISHED)
+        self.assertEqual(game.winner, self.white)
+
+
+class GameDebugToolsTests(TestCase):
+    """Coverage for debug-only game helper controls and endpoints."""
+
+    def setUp(self) -> None:
+        """Create an active game and log in the white player."""
+        User = get_user_model()
+        self.white = User.objects.create_user(username="white", password="pass")
+        self.black = User.objects.create_user(username="black", password="pass")
+        self.game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+        self.client.force_login(self.white)
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_debug_buttons_render_when_enabled(self) -> None:
+        """Debug buttons are visible when the backend setting enables them."""
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(response, "В дом для теста")
+        self.assertContains(response, "Тест победы")
+        self.assertContains(response, "👈")
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=False)
+    def test_debug_buttons_and_endpoint_are_disabled_when_setting_is_off(self) -> None:
+        """Debug buttons are hidden and helper endpoints reject requests."""
+        detail_response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+        endpoint_response = self.client.post(
+            reverse("backgammon:prepare_bear_off", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertNotContains(detail_response, "В дом для теста")
+        self.assertNotContains(detail_response, "Тест победы")
+        self.assertEqual(endpoint_response.status_code, 403)

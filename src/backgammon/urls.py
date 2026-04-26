@@ -13,6 +13,16 @@ urlpatterns = [
     path("games/<int:pk>/state/", views.game_state, name="game_state"),
     path("games/<int:pk>/roll/", views.roll, name="roll"),
     path("games/<int:pk>/move/", views.move, name="move"),
+    path(
+        "games/<int:pk>/prepare-bear-off/",
+        views.prepare_bear_off,
+        name="prepare_bear_off",
+    ),
+    path(
+        "games/<int:pk>/prepare-victory/",
+        views.prepare_victory,
+        name="prepare_victory",
+    ),
     path("games/<int:pk>/undo/", views.undo_move, name="undo_move"),
     path("games/<int:pk>/end-turn/", views.end_turn, name="end_turn"),
 ]

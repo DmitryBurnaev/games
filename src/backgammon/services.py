@@ -143,6 +143,83 @@ def add_checker(board: Board, point: int, color: Game.Color) -> None:
         board[point] = {"color": color, "count": 1}
 
 
+def remove_color_from_board(board: Board, color: Game.Color) -> int:
+    """Remove all checkers of a color from the board and return their count."""
+    removed = 0
+    for point, stack in enumerate(board):
+        if stack and stack.get("color") == color:
+            removed += stack.get("count", 0)
+            board[point] = None
+    return removed
+
+
+def home_points(color: Game.Color) -> list[int]:
+    """Return board points that form a color's home area."""
+    return PATHS[color][HOME_START:]
+
+
+def arrange_checkers_in_home(game: Game, user: Any) -> None:
+    """Move all of a user's remaining checkers into home for finish testing."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Раскладку можно подготовить только в активной игре.")
+
+    color = game.color_for(user)
+    if not color:
+        raise GameError("Вы не участвуете в этой игре.")
+
+    remaining = 15 - game.borne_off.get(color, 0)
+    remove_color_from_board(game.board, color)
+    available_home_points = [
+        point
+        for point in home_points(color)
+        if not game.board[point] or game.board[point].get("color") == color
+    ]
+    if not available_home_points:
+        raise GameError("В доме нет свободных пунктов для тестовой раскладки.")
+    for offset in range(remaining):
+        add_checker(
+            game.board,
+            available_home_points[offset % len(available_home_points)],
+            color,
+        )
+
+    game.current_player = user
+    game.dice = []
+    game.remaining_moves = []
+    game.has_rolled = False
+    game.head_moves_this_turn = 0
+    game.save()
+
+
+def arrange_checkers_for_victory_test(game: Game, user: Any) -> None:
+    """Leave one or two user checkers in home and mark the rest borne off."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Тест победы можно подготовить только в активной игре.")
+
+    color = game.color_for(user)
+    if not color:
+        raise GameError("Вы не участвуете в этой игре.")
+
+    remove_color_from_board(game.board, color)
+    available_home_points = [
+        point
+        for point in home_points(color)
+        if not game.board[point] or game.board[point].get("color") == color
+    ]
+    if len(available_home_points) < 2:
+        raise GameError("В доме нет двух свободных пунктов для теста победы.")
+
+    game.borne_off[color] = 13
+    add_checker(game.board, available_home_points[-2], color)
+    add_checker(game.board, available_home_points[-1], color)
+    game.current_player = user
+    game.dice = []
+    game.remaining_moves = []
+    game.has_rolled = False
+    game.head_moves_this_turn = 0
+    game.save()
+
+
 def validate_move(
     game: Game,
     user: Any,

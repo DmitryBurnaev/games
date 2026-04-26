@@ -11,6 +11,12 @@
     data-move-url="{% url 'backgammon:move' game.pk %}"
     data-undo-url="{% url 'backgammon:undo_move' game.pk %}"
     data-end-turn-url="{% url 'backgammon:end_turn' game.pk %}"
+    {% if debug_game_tools %}
+    data-prepare-bear-off-url="{% url 'backgammon:prepare_bear_off' game.pk %}"
+    data-prepare-victory-url="{% url 'backgammon:prepare_victory' game.pk %}"
+    {% endif %}
+    data-domovoy-one="{% static 'domovoy-1.jpg' %}"
+    data-domovoy-two="{% static 'domovoy-2.jpg' %}"
 >
     {% csrf_token %}
 
@@ -50,8 +56,14 @@
 
             <div class="d-grid gap-2 mb-3">
                 <button id="roll-button" class="btn btn-primary" type="button">Бросить кубики</button>
-                <button id="undo-button" class="btn btn-outline-warning" type="button">Отменить мой ход</button>
-                <button id="end-turn-button" class="btn btn-outline-secondary" type="button">Завершить ход</button>
+                <div class="turn-actions">
+                    <button id="undo-button" class="btn btn-outline-warning" type="button" aria-label="Отменить мой ход" title="Отменить мой ход">👈</button>
+                    <button id="end-turn-button" class="btn btn-outline-secondary" type="button">Завершить ход</button>
+                </div>
+                {% if debug_game_tools %}
+                    <button id="prepare-bear-off-button" class="btn btn-outline-info btn-sm" type="button">В дом для теста</button>
+                    <button id="prepare-victory-button" class="btn btn-outline-success btn-sm" type="button">Тест победы</button>
+                {% endif %}
             </div>
 
             <div id="move-panel" class="move-panel"></div>
@@ -66,7 +78,11 @@
             </div>
         </section>
     </div>
+
+    <div id="domovoy-pop" class="domovoy-pop" aria-hidden="true">
+        <img id="domovoy-image" alt="" src="">
+    </div>
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=13"></script>
+<script src="{% static 'backgammon/game.js' %}?v=17"></script>
 {% endblock %}
