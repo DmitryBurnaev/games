@@ -1,0 +1,64 @@
+#!/bin/sh
+
+set -e
+
+required_env_vars="APP_PORT DJANGO_SECRET_KEY DJANGO_ALLOWED_HOSTS SQLITE_PATH"
+
+print_caption() {
+  echo ""
+  echo "===================="
+  echo "$1"
+  echo "===================="
+  echo ""
+}
+
+check_env_var() {
+  var="$1"
+  eval "value=\$$var"
+
+  if [ -z "$value" ]; then
+    echo "Error: required environment variable $var is not set" >&2
+    kill -s SIGINT 1
+  fi
+
+  echo "Environment variable $var is set"
+}
+
+check_required_env() {
+  print_caption "Check environment variables"
+  echo "Environment variable APP_SERVICE is set (${APP_SERVICE})"
+  for var in $required_env_vars; do
+    check_env_var "$var"
+  done
+  mkdir -p "$(dirname "${SQLITE_PATH}")"
+}
+
+case "${APP_SERVICE}" in
+  app)
+    check_required_env
+    print_caption "Run Django migrations"
+    python src/manage.py migrate --noinput
+    print_caption "Start app"
+    uvicorn games.asgi:application --host 0.0.0.0 --port "${APP_PORT}" --proxy-headers --forwarded-allow-ips="*"
+    ;;
+  test)
+    check_required_env
+    print_caption "Django check"
+    python src/manage.py check
+    print_caption "Run tests"
+    python src/manage.py test backgammon
+    ;;
+  lint)
+    check_required_env
+    print_caption "Black check"
+    black --check --workers 1 .
+    print_caption "Django check"
+    python src/manage.py check
+    ;;
+  *)
+    echo "APP_SERVICE environment variable is unexpected or was not provided (APP_SERVICE='${APP_SERVICE}')" >&2
+    kill -s SIGINT 1
+    ;;
+esac
+
+set +e

@@ -10,3 +10,6 @@ wheels/
 .venv
 .local
 .idea
+.env
+.data
+staticfiles

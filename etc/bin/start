@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+export WORKING_DIR=/opt/games/
+
+echo "=== Move to app dir ==="
+cd ${WORKING_DIR}
+
+echo "=== Reading $(pwd)/.env file ==="
+export $(grep -v '^#' .env | xargs)
+
+echo "=== Reading $(pwd)/.version file ==="
+export $(grep -v '^#' .version | xargs)
+
+echo "=== Starting Games service ==="
+echo "Detected version: '${DOCKER_IMAGE}'"
+docker compose up

@@ -1,0 +1,13 @@
+services:
+  app:
+    image: ${DOCKER_IMAGE}
+    container_name: games-app
+    env_file:
+      - .env
+    environment:
+      APP_SERVICE: app
+      SQLITE_PATH: /app/.data/db.sqlite3
+    ports:
+      - 127.0.0.1:${APP_PORT}:${APP_PORT}
+    volumes:
+      - ${PWD}/.data:/app/.data

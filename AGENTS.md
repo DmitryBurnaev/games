@@ -16,7 +16,49 @@ Useful checks:
 ```bash
 uv run python src/manage.py check
 uv run python src/manage.py test backgammon
+uv run black --check .
+docker compose up --build app
+docker compose up --build --exit-code-from test test
 ```
+
+## Deployment In This Project
+
+The project has Docker, server deployment files, and GitHub Actions release automation.
+
+Local and CI files:
+
+- `Dockerfile`: multi-stage build with `service` and `tests` targets.
+- `docker-compose.yml`: local/CI compose with `app`, `test`, and `lint`.
+- `.env.template`: local/server environment template; real `.env` is ignored.
+- `.dockerignore`: keeps local caches, data, static output, and git metadata out of images.
+- `Makefile`: common local commands for check/test/lint/Docker runs.
+
+Server/deployment files:
+
+- `etc/docker-compose.yml`: production compose that pulls `${DOCKER_IMAGE}` instead of building.
+- `etc/docker-entrypoint`: validates env, runs migrations, and starts app/test/lint modes.
+- `etc/games.service`: systemd unit for `/opt/games`.
+- `etc/nginx.conf`: reverse proxy template to the app bound on localhost.
+- `etc/bin/start`, `etc/bin/stop`, `etc/bin/deploy`, `etc/bin/service`: server operation scripts.
+- `INSTALL.md`: server bootstrap, deployment user, release flow, and Nginx/Certbot instructions.
+
+GitHub Actions:
+
+- `.github/workflows/tests.yaml`: Dockerized lint and tests on PR/main.
+- `.github/workflows/release.yaml`: semver tag release, GHCR image push, GitHub Release, SSH deploy.
+- `.github/workflows/scan.yaml`: TruffleHog, Gitleaks, and Opengrep scans.
+- `.github/workflows/codeql.yaml`: CodeQL Python analysis.
+
+Runtime notes:
+
+- Django settings are env-driven in `src/games/settings.py`.
+- Production requires `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`.
+- The app uses SQLite. Docker mode mounts host `./.data` to container `/app/.data`;
+  the database file is `/app/.data/db.sqlite3` unless `SQLITE_PATH` says otherwise.
+- Local non-Docker mode defaults to `.data/db.sqlite3`.
+- Static files are collected into the immutable Docker image and served by WhiteNoise.
+- `/health/` is unauthenticated and used by service health checks.
+- The app runs with `uvicorn games.asgi:application` in the production container.
 
 ## Game Flow
 

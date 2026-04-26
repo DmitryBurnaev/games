@@ -1,0 +1,143 @@
+#!/bin/bash
+
+SERVICE_NAME="games"
+WORKING_DIR="/opt/games"
+
+if [ -f "${WORKING_DIR}/.env" ]; then
+    export $(grep -v '^#' "${WORKING_DIR}/.env" | xargs)
+fi
+
+show_service_logs() {
+    local tail_lines="50"
+    local grep_pattern=""
+    local args=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --tail)
+                tail_lines="$2"
+                args+=("-n" "$tail_lines")
+                shift 2
+                ;;
+            --since)
+                args+=("--since" "$2")
+                shift 2
+                ;;
+            --until)
+                args+=("--until" "$2")
+                shift 2
+                ;;
+            --grep)
+                grep_pattern="$2"
+                shift 2
+                ;;
+            --follow)
+                args+=("-f")
+                shift 1
+                ;;
+            *)
+                echo "Unknown parameter: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    args+=("-u" "$SERVICE_NAME" "--no-pager")
+
+    if [ -n "$grep_pattern" ]; then
+        sudo journalctl "${args[@]}" | grep "$grep_pattern"
+    else
+        sudo journalctl "${args[@]}"
+    fi
+}
+
+show_logs() {
+    echo "Recent service logs:"
+    sudo journalctl -u $SERVICE_NAME -n 50 --no-pager
+}
+
+follow_logs() {
+    echo "Following service logs (Ctrl+C to stop):"
+    sudo journalctl -u $SERVICE_NAME -f
+}
+
+check_health() {
+    echo "Checking service health..."
+
+    if sudo systemctl is-active --quiet $SERVICE_NAME; then
+        echo "Service is running"
+    else
+        echo "Service is not running"
+        return 1
+    fi
+
+    if curl -fsS http://127.0.0.1:${APP_PORT:-8000}/health/ >/dev/null; then
+        echo "Health endpoint is responding"
+    else
+        echo "Health endpoint is not responding"
+        return 1
+    fi
+}
+
+case "$1" in
+    start)
+        sudo systemctl start $SERVICE_NAME
+        if [ "$2" = "--logs" ]; then
+            follow_logs
+        else
+            show_logs
+        fi
+        ;;
+    stop)
+        sudo systemctl stop $SERVICE_NAME
+        sudo systemctl status $SERVICE_NAME
+        ;;
+    restart)
+        sudo systemctl restart $SERVICE_NAME
+        if [ "$2" = "--logs" ]; then
+            follow_logs
+        else
+            show_logs
+        fi
+        ;;
+    status)
+        sudo systemctl status $SERVICE_NAME
+        if [ "$2" = "--logs" ]; then
+            follow_logs
+        else
+            show_logs
+        fi
+        ;;
+    logs)
+        shift
+        if [ $# -eq 0 ]; then
+            show_logs
+        else
+            show_service_logs "$@"
+        fi
+        ;;
+    health)
+        check_health
+        ;;
+    *)
+        echo "Usage: $0 COMMAND [OPTIONS]"
+        echo ""
+        echo "Commands:"
+        echo "  start [--logs]    Start service"
+        echo "  stop              Stop service"
+        echo "  restart [--logs]  Restart service"
+        echo "  status [--logs]   Show service status"
+        echo "  logs [OPTIONS]    Show service logs"
+        echo "  health            Check service health"
+        echo ""
+        echo "Log options:"
+        echo "  --tail N          Show last N lines"
+        echo "  --since VALUE     Show logs since"
+        echo "  --until VALUE     Show logs until timestamp"
+        echo "  --grep PATTERN    Filter logs by pattern"
+        echo "  --follow          Follow logs in real-time"
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -1,0 +1,48 @@
+services:
+  app:
+    container_name: games-app
+    image: ${DOCKER_IMAGE:-games}
+    build:
+      context: .
+      target: service
+    ports:
+      - 127.0.0.1:${APP_PORT}:${APP_PORT}
+    env_file:
+      - .env
+    environment:
+      APP_SERVICE: app
+      SQLITE_PATH: /app/.data/db.sqlite3
+    volumes:
+      - ${PWD}/.data:/app/.data
+
+  test:
+    container_name: games-test
+    image: games:test
+    env_file:
+      - .env
+    build:
+      context: .
+      target: tests
+      args:
+        DEV_DEPS: true
+    environment:
+      APP_SERVICE: test
+      SQLITE_PATH: /app/.data/test.sqlite3
+    volumes:
+      - ${PWD}/.data:/app/.data
+
+  lint:
+    container_name: games-lint
+    image: games:test
+    env_file:
+      - .env
+    build:
+      context: .
+      target: tests
+      args:
+        DEV_DEPS: true
+    environment:
+      APP_SERVICE: lint
+      SQLITE_PATH: /app/.data/lint.sqlite3
+    volumes:
+      - ${PWD}/.data:/app/.data

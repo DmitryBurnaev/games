@@ -1,0 +1,18 @@
+# copy this file to /etc/systemd/system/games.service
+
+[Unit]
+Description=Long Backgammon Games Service
+Requires=docker.service
+After=docker.service
+
+[Service]
+User=games-srv
+Group=games-srv
+ExecStart=/opt/games/bin/start
+ExecStop=/opt/games/bin/stop
+Restart=on-failure
+RestartSec=20
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

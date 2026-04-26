@@ -17,19 +17,43 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = BASE_DIR.parent
 
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
+
+
+def env_list(name: str, default: list[str] | None = None) -> list[str]:
+    value = os.environ.get(name)
+    if not value:
+        return default or []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-68h_6gfc2i0%bn(4i*r4)lv407+pb^*s5+b@0dofi6o2z71zt4"
+DEBUG = env_bool("DJANGO_DEBUG", True)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY")
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = (
+            "django-insecure-68h_6gfc2i0%bn(4i*r4)lv407+pb^*s5+b@0dofi6o2z71zt4"
+        )
+    else:
+        raise RuntimeError("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG is false")
+
 BACKGAMMON_DEBUG_TOOLS = os.environ.get(
     "BACKGAMMON_DEBUG_TOOLS", str(DEBUG)
 ).lower() in {"1", "true", "yes", "on"}
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])
+CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = env_bool("DJANGO_USE_X_FORWARDED_HOST", False)
 
 
 # Application definition
@@ -53,6 +77,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+if not DEBUG:
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 
 ROOT_URLCONF = "games.urls"
 
@@ -72,15 +98,19 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "games.wsgi.application"
+ASGI_APPLICATION = "games.asgi.application"
 
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+SQLITE_PATH = Path(os.environ.get("SQLITE_PATH", PROJECT_DIR / ".data" / "db.sqlite3"))
+SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": PROJECT_DIR / ".local" / "db.sqlite3",
+        "NAME": SQLITE_PATH,
     }
 }
 
@@ -119,8 +149,17 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = PROJECT_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "assets"]
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
 
 LOGIN_REDIRECT_URL = "backgammon:game_list"
 LOGOUT_REDIRECT_URL = "login"
