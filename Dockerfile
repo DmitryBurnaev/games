@@ -31,8 +31,8 @@ COPY --from=requirements-layer /usr/src/requirements.txt .
 RUN pip install --upgrade pip==${PIP_VERSION} && \
     pip install --timeout "${PIP_DEFAULT_TIMEOUT}" --no-cache-dir --require-hashes -r requirements.txt
 
-RUN addgroup -S backgammon -g 1007 && \
-    adduser -S -G backgammon -u 1007 -H backgammon && \
+RUN addgroup -S backgammon -g 1010 && \
+    adduser -S -G backgammon -u 1010 -H backgammon && \
     mkdir -p /app/.data && \
     mkdir -p /app/staticfiles && \
     chown backgammon:backgammon /app/.data && \

@@ -19,8 +19,8 @@ sudo su
 
 export TARGET_DIR="/opt/games"
 
-groupadd --system games-srv --gid 1007
-useradd --no-log-init --system --gid games-srv --uid 1007 games-srv
+groupadd --system games-srv --gid 1010
+useradd --no-log-init --system --gid games-srv --uid 1010 games-srv
 
 mkdir -p ${TARGET_DIR}/bin ${TARGET_DIR}/.data
 chown games-srv:games-srv -R ${TARGET_DIR}
@@ -50,7 +50,7 @@ Required production values:
 
 The SQLite database is stored on the host at `${TARGET_DIR}/.data/db.sqlite3`
 through the Docker bind mount `${TARGET_DIR}/.data:/app/.data`.
-The app container runs as UID/GID `1007`, so `${TARGET_DIR}/.data` must be writable
+The app container runs as UID/GID `1010`, so `${TARGET_DIR}/.data` must be writable
 by that ID. The commands above create the directory under the matching service user.
 
 Create the systemd service:

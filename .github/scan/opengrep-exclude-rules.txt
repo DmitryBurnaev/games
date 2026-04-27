@@ -1,0 +1,3 @@
+# One Opengrep/Semgrep rule id per line.
+# False positive for Django's is_anonymous attribute on request.user.
+opengrep-rules.python.lang.maintainability.is-function-without-parentheses
