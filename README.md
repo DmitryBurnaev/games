@@ -1,7 +1,7 @@
 # Games
 
 Web platform for small online games. The first implemented game is two-player
-long backgammon (`длинные нарды`).
+long backgammon.
 
 The app is a Django project with server-rendered pages, a browser-side board UI,
 Docker packaging, SQLite persistence, and GitHub Actions for test/release/deploy.
@@ -11,17 +11,6 @@ Docker packaging, SQLite persistence, and GitHub Actions for test/release/deploy
 - Long backgammon: online two-player game with lobby, joining, rolling dice,
   legal moves, undo during unfinished turns, bearing off, win detection, and
   player stats foundation.
-
-## Project Layout
-
-- `src/games`: Django project settings, URLs, ASGI/WSGI entrypoints.
-- `src/backgammon`: current game app, models, views, rules, templates, static UI.
-- `src/assets`: shared static assets.
-- `Dockerfile`: service/test images.
-- `docker-compose.yml`: local and CI Docker Compose setup.
-- `etc`: production compose, systemd unit, Nginx config, and server scripts.
-- `.github/workflows`: tests, release, security scans, CodeQL.
-- `INSTALL.md`: server installation and release operations.
 
 ## Requirements
 
