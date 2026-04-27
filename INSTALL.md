@@ -31,6 +31,20 @@ chmod ug+x ${TARGET_DIR} ${TARGET_DIR}/.data
 chmod ug+w ${TARGET_DIR}/.data
 ```
 
+CI deploys over SSH as a non-root user, for example `deploy`.
+
+```shell
+usermod -a -G games-srv deploy
+visudo -f /etc/sudoers.d/deploy
+```
+
+Add:
+
+```text
+deploy ALL = NOPASSWD: /bin/systemctl restart games.service
+deploy ALL = NOPASSWD: /bin/systemctl show -p ActiveState --value games
+```
+
 After the first CI delivery, prepare environment values:
 
 ```shell
