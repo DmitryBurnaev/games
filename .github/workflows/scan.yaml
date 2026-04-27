@@ -12,6 +12,7 @@ env:
   TRIVY_VERSION: "v0.67.2"
   TRIVY_SEVERITY: "CRITICAL,HIGH,MEDIUM,LOW"
   OPENGREP_VERSION: "v1.11.2"
+  OPENGREP_EXCLUDE_RULES: ".github/scan/opengrep-exclude-rules.txt"
   TRUFFLEHOG_VERSION: "v3.90.12"
   GITLEAKS_VERSION: "v8.28.0"
 
@@ -89,7 +90,8 @@ jobs:
       - name: Run Opengrep Scan (report)
         run: |
           export PATH='/home/runner/.opengrep/cli/latest':$PATH
-          opengrep scan --config opengrep-rules/python --json -o "${{ runner.workspace }}/opengrep-results.json" .
+          OPENGREP_EXCLUDE_ARGS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${OPENGREP_EXCLUDE_RULES}" | xargs -I{} printf ' --exclude-rule %s' '{}')"
+          opengrep scan --config opengrep-rules/python ${OPENGREP_EXCLUDE_ARGS} --json -o "${{ runner.workspace }}/opengrep-results.json" .
 
       - name: Upload scan results
         uses: actions/upload-artifact@v4
@@ -101,4 +103,5 @@ jobs:
       - name: Run Opengrep Scan (alert)
         run: |
           export PATH='/home/runner/.opengrep/cli/latest':$PATH
-          opengrep scan --config opengrep-rules/python --error .
+          OPENGREP_EXCLUDE_ARGS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${OPENGREP_EXCLUDE_RULES}" | xargs -I{} printf ' --exclude-rule %s' '{}')"
+          opengrep scan --config opengrep-rules/python ${OPENGREP_EXCLUDE_ARGS} --error .

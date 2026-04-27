@@ -66,7 +66,7 @@ Docker stores the SQLite database on the host in:
 ```
 
 The host directory `.data` is mounted into the container as `/app/.data`.
-On Linux hosts this directory must be writable by UID/GID `1007`, the non-root user
+On Linux hosts this directory must be writable by UID/GID `1010`, the non-root user
 used by the container.
 
 ## Make Commands
@@ -176,7 +176,7 @@ See `INSTALL.md` for full setup. In short, production uses:
 
 - Docker Compose with only the app container.
 - SQLite persisted in `/opt/games/.data/db.sqlite3`.
-- `/opt/games/.data` must be writable by UID/GID `1007`.
+- `/opt/games/.data` must be writable by UID/GID `1010`.
 - systemd service `games.service`.
 - Nginx as reverse proxy to `127.0.0.1:${APP_PORT}`.
 - `/health/` as an unauthenticated health endpoint.

@@ -1,13 +1,15 @@
 name: Release
 on:
   push:
+    branches:
+      - bufix/install-and-ci-fixes
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
 
 env:
   REGISTRY: ghcr.io
   DOCKER_IMAGE_NAME: ${{ github.repository }}
-  # DEBUG_DOCKER_IMAGE_TAG: 0.1.0-debug
+  DEBUG_DOCKER_IMAGE_TAG: 0.1.0-debug
 
 jobs:
   prepare:
@@ -47,7 +49,7 @@ jobs:
           cp .env.template .env
           echo "DJANGO_SECRET_KEY=test-secret-key" >> .env
           echo "DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,testserver" >> .env
-          sudo install -d -o 1007 -g 1007 -m 0770 .data
+          sudo install -d -o 1010 -g 1010 -m 0770 .data
           env >> .env
 
       - name: Build image
