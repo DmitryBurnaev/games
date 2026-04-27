@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: ghcr.io
   DOCKER_IMAGE_NAME: ${{ github.repository }}
-  DEBUG_DOCKER_IMAGE_TAG: 0.1.0-debug
+  DEBUG_DOCKER_IMAGE_TAG: 0.1.1-debug
 
 jobs:
   prepare:
