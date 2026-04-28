@@ -149,11 +149,12 @@ through Nginx.
 Copy `nginx.conf` to your Nginx site config and edit the domain and port:
 
 ```shell
-cp /opt/games/nginx.conf /etc/nginx/sites-available/games.conf
+export TARGET_DIR="/opt/games"
+
+cp ${TARGET_DIR}/nginx.conf /etc/nginx/sites-available/games.conf
 ln -s /etc/nginx/sites-available/games.conf /etc/nginx/sites-enabled/
 nano /etc/nginx/sites-available/games.conf
-nginx -t
-nginx -s reload
+nginx -t && nginx -s reload
 ```
 
 Set up HTTPS with Certbot after DNS points to the server:
