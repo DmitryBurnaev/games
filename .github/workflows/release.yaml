@@ -1,8 +1,6 @@
 name: Release
 on:
   push:
-    branches:
-      - bufix/install-and-ci-fixes
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
 
