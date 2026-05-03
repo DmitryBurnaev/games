@@ -23,12 +23,26 @@
         <h2 class="h5 mb-3">Мои игры</h2>
         <div class="list-group">
             {% for game in my_games %}
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" href="{% url 'backgammon:game_detail' game.pk %}">
-                    <span>
-                        #{{ game.pk }} · {{ game.white_player.username }} против
-                        {% if game.black_player %}{{ game.black_player.username }}{% else %}ожидание{% endif %}
+                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
+                    <span class="d-flex flex-column gap-1">
+                        <span>#{{ game.pk }} · {{ game.white_player.username }} ⇆ {% if game.black_player %}{{ game.black_player.username }}{% else %}ожидание{% endif %}</span>
+                        <span class="text-secondary small">
+                            {{ game.created_at|date:"d.m.Y H:i" }} · ⌛ {{ game.duration_label }}
+                        </span>
                     </span>
-                    <span class="badge text-bg-secondary">{{ game.get_status_display }}</span>
+                    {% if game.winner %}
+                        <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">
+                            {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}
+                        </span>
+                    {% elif game.status == "active" %}
+                        <span class="badge text-bg-secondary flex-shrink-0">игра в процессе ...</span>
+                    {% elif game.status == "waiting" %}
+                        <span class="badge text-bg-secondary flex-shrink-0">ожидание соперника</span>
+                    {% elif game.status == "finished" %}
+                        <span class="badge text-bg-secondary flex-shrink-0">игра завершена</span>
+                    {% else %}
+                        <span class="badge text-bg-secondary flex-shrink-0">статус неизвестен</span>
+                    {% endif %}
                 </a>
             {% empty %}
                 <div class="text-secondary">Пока нет игр.</div>
@@ -40,9 +54,14 @@
         <h2 class="h5 mb-3">Ожидают игрока</h2>
         <div class="list-group">
             {% for game in open_games %}
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" href="{% url 'backgammon:game_detail' game.pk %}">
-                    <span>#{{ game.pk }} · {{ game.white_player.username }}</span>
-                    <span class="badge text-bg-primary">Войти</span>
+                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
+                    <span class="d-flex flex-column gap-1">
+                        <span>#{{ game.pk }} · {{ game.white_player.username }}</span>
+                        <span class="text-secondary small">
+                            {{ game.created_at|date:"d.m.Y H:i" }} · ⌛ {{ game.duration_label }}
+                        </span>
+                    </span>
+                    <span class="badge text-bg-primary flex-shrink-0">Войти</span>
                 </a>
             {% empty %}
                 <div class="text-secondary">Открытых игр нет.</div>

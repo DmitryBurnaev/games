@@ -96,6 +96,7 @@ Runtime variables are defined in `.env.template`.
 | `DJANGO_USE_X_FORWARDED_HOST` | No                     | `false`                                 | Whether Django should trust `X-Forwarded-Host`.                           |
 | `BACKGAMMON_DEBUG_TOOLS`      | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                        |
 | `BACKGAMMON_ANIMATIONS_ENABLED` | No                   | `true`                                  | Enables checker movement animations in the board UI.                      |
+| `BACKGAMMON_POLL_INTERVAL_MS` | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
 | `ALLOW_USER_REGISTRATION`     | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.   |
 | `SQLITE_PATH`                 | Yes for Docker/prod    | `/app/.data/db.sqlite3` in template     | SQLite database path inside the container.                                |
 
@@ -115,6 +116,7 @@ DJANGO_CSRF_TRUSTED_ORIGINS=https://games.example.com
 DJANGO_USE_X_FORWARDED_HOST=false
 BACKGAMMON_DEBUG_TOOLS=false
 BACKGAMMON_ANIMATIONS_ENABLED=true
+BACKGAMMON_POLL_INTERVAL_MS=1000
 ALLOW_USER_REGISTRATION=false
 
 SQLITE_PATH=/app/.data/db.sqlite3

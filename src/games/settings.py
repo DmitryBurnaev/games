@@ -32,6 +32,19 @@ def env_list(name: str, default: list[str] | None = None) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def env_int(name: str, default: int, min_value: int | None = None) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    if min_value is not None:
+        return max(parsed, min_value)
+    return parsed
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -50,6 +63,7 @@ BACKGAMMON_DEBUG_TOOLS = os.environ.get(
     "BACKGAMMON_DEBUG_TOOLS", str(DEBUG)
 ).lower() in {"1", "true", "yes", "on"}
 BACKGAMMON_ANIMATIONS_ENABLED = env_bool("BACKGAMMON_ANIMATIONS_ENABLED", True)
+BACKGAMMON_POLL_INTERVAL_MS = env_int("BACKGAMMON_POLL_INTERVAL_MS", 1000, 250)
 ALLOW_USER_REGISTRATION = env_bool("ALLOW_USER_REGISTRATION", False)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])

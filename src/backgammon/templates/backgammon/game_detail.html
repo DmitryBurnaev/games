@@ -9,11 +9,13 @@
     data-state-url="{% url 'backgammon:game_state' game.pk %}"
     data-roll-url="{% url 'backgammon:roll' game.pk %}"
     data-move-url="{% url 'backgammon:move' game.pk %}"
+    data-surrender-url="{% url 'backgammon:surrender' game.pk %}"
     data-undo-url="{% url 'backgammon:undo_move' game.pk %}"
     data-end-turn-url="{% url 'backgammon:end_turn' game.pk %}"
     data-game-id="{{ game.pk }}"
     data-debug-tools="{% if debug_game_tools %}1{% else %}0{% endif %}"
     data-animations-enabled="{% if animations_enabled %}1{% else %}0{% endif %}"
+    data-poll-interval-ms="{{ poll_interval_ms }}"
     {% if debug_game_tools %}
     data-prepare-bear-off-url="{% url 'backgammon:prepare_bear_off' game.pk %}"
     data-prepare-victory-url="{% url 'backgammon:prepare_victory' game.pk %}"
@@ -63,6 +65,7 @@
                     <button id="undo-button" class="btn btn-outline-warning" type="button" aria-label="Отменить мой ход" title="Отменить мой ход">👈</button>
                     <button id="end-turn-button" class="btn btn-outline-secondary" type="button">Завершить ход</button>
                 </div>
+                <button id="surrender-button" class="btn btn-outline-danger btn-sm" type="button">сдаюсь!</button>
                 {% if debug_game_tools %}
                     <button id="prepare-bear-off-button" class="btn btn-outline-info btn-sm" type="button">В дом для теста</button>
                     <button id="prepare-victory-button" class="btn btn-outline-success btn-sm" type="button">Тест победы</button>
@@ -87,5 +90,5 @@
     </div>
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=32"></script>
+<script src="{% static 'backgammon/game.js' %}?v=35"></script>
 {% endblock %}
