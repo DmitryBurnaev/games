@@ -158,6 +158,28 @@ def home_points(color: Game.Color) -> list[int]:
     return PATHS[color][HOME_START:]
 
 
+def has_six_point_block_outside_home(board: Board, color: Game.Color) -> bool:
+    """Return whether a color has six consecutive occupied points outside home."""
+    path = PATHS[color]
+    home = set(home_points(color))
+    for start in range(24):
+        points = [path[(start + offset) % 24] for offset in range(6)]
+        if any(point in home for point in points):
+            continue
+        if all(point_has_color(board, point, color) for point in points):
+            return True
+    return False
+
+
+def surrender_mars_available(game: Game, loser: Any) -> bool:
+    """Return whether a surrendering player may mark the loss as mars."""
+    loser_color = game.color_for(loser)
+    if not loser_color:
+        return False
+    winner_color = opponent_color(loser_color)
+    return has_six_point_block_outside_home(game.board, winner_color)
+
+
 def arrange_checkers_in_home(game: Game, user: Any) -> None:
     """Move all of a user's remaining checkers into home for finish testing."""
     if game.status != Game.Status.ACTIVE:
@@ -417,6 +439,11 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "remaining_moves": game.remaining_moves,
         "has_rolled": game.has_rolled,
         "turn_number": game.turn_number,
+        "can_surrender": game.status == Game.Status.ACTIVE
+        and bool(viewer_color)
+        and bool(game.opponent_for(viewer)),
+        "surrender_mars_available": game.status == Game.Status.ACTIVE
+        and surrender_mars_available(game, viewer),
         "can_roll": game.status == Game.Status.ACTIVE
         and game.current_player_id == viewer.id
         and not game.has_rolled,
@@ -502,6 +529,39 @@ def update_stats(game: Game, winner: Any) -> None:
         + (1 if game.victory_type == Game.VictoryType.OIN else 0),
         mars_losses=F("mars_losses")
         + (1 if game.victory_type == Game.VictoryType.MARS else 0),
+    )
+
+
+def surrender_game(
+    game: Game, loser: Any, requested_victory_type: str | None = None
+) -> None:
+    """Finish an active game when a player resigns."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Сдаться можно только в активной игре.")
+    if not game.color_for(loser):
+        raise GameError("Вы не участвуете в этой игре.")
+    winner = game.opponent_for(loser)
+    if not winner:
+        raise GameError("У этой игры еще нет соперника.")
+
+    victory_type = Game.VictoryType.OIN
+    if requested_victory_type == Game.VictoryType.MARS:
+        if not surrender_mars_available(game, loser):
+            raise GameError("Марс при сдаче доступен только при блоке из 6 пунктов.")
+        victory_type = Game.VictoryType.MARS
+
+    game.mark_finished(winner, victory_type)
+    game.dice = []
+    game.remaining_moves = []
+    game.has_rolled = False
+    update_stats(game, winner)
+    game.save()
+    GameMove.objects.create(
+        game=game,
+        player=loser,
+        action=GameMove.Action.FINISH,
+        dice=[],
+        board=game.board,
     )
 
 

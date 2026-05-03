@@ -1,3 +1,6 @@
+import json
+from datetime import datetime, timezone as datetime_timezone
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -335,6 +338,147 @@ class GameRulesTests(TestCase):
         self.assertEqual(game.status, Game.Status.FINISHED)
         self.assertEqual(game.winner, self.white)
 
+    def test_surrender_finishes_game_for_opponent_and_updates_stats(self) -> None:
+        """A player may resign and give a regular win to the opponent."""
+        game = self.active_game()
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:surrender", args=[game.pk]),
+            data="{}",
+            content_type="application/json",
+        )
+        game.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(game.status, Game.Status.FINISHED)
+        self.assertEqual(game.winner, self.black)
+        self.assertEqual(game.victory_type, Game.VictoryType.OIN)
+        self.assertFalse(response.json()["game"]["can_surrender"])
+        self.assertEqual(PlayerStats.objects.get(user=self.black).wins, 1)
+        self.assertEqual(PlayerStats.objects.get(user=self.white).losses, 1)
+
+    def test_surrender_can_mark_mars_for_opponent_block_outside_home(self) -> None:
+        """A surrender may be marked as mars when the opponent has an outside block."""
+        game = self.active_game()
+        game.board = [None for _ in range(24)]
+        for point in range(12, 18):
+            game.board[point] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[0] = {"color": Game.Color.WHITE, "count": 1}
+        game.save()
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:surrender", args=[game.pk]),
+            data=json.dumps({"victory_type": "mars"}),
+            content_type="application/json",
+        )
+        game.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(game.status, Game.Status.FINISHED)
+        self.assertEqual(game.winner, self.black)
+        self.assertEqual(game.victory_type, Game.VictoryType.MARS)
+        self.assertEqual(PlayerStats.objects.get(user=self.black).mars_wins, 1)
+        self.assertEqual(PlayerStats.objects.get(user=self.white).mars_losses, 1)
+
+    def test_surrender_rejects_mars_for_block_in_opponent_home(self) -> None:
+        """A six-point block in the opponent's home does not allow mars surrender."""
+        game = self.active_game()
+        game.board = [None for _ in range(24)]
+        for point in range(6, 12):
+            game.board[point] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[0] = {"color": Game.Color.WHITE, "count": 1}
+        game.save()
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:surrender", args=[game.pk]),
+            data=json.dumps({"victory_type": "mars"}),
+            content_type="application/json",
+        )
+        game.refresh_from_db()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.json()["ok"])
+        self.assertEqual(game.status, Game.Status.ACTIVE)
+
+    def test_serialized_game_exposes_surrender_state(self) -> None:
+        """The browser receives surrender availability and mars suggestion state."""
+        game = self.active_game()
+        game.board = [None for _ in range(24)]
+        for point in range(12, 18):
+            game.board[point] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[0] = {"color": Game.Color.WHITE, "count": 1}
+        game.save()
+
+        payload = serialize_game(game, self.white)
+
+        self.assertTrue(payload["can_surrender"])
+        self.assertTrue(payload["surrender_mars_available"])
+
+
+class GameLobbyTests(TestCase):
+    """Coverage for lobby game metadata."""
+
+    def setUp(self) -> None:
+        """Create users and log in the viewer."""
+        User = get_user_model()
+        self.viewer = User.objects.create_user(username="viewer", password="pass")
+        self.opponent = User.objects.create_user(username="opponent", password="pass")
+        self.client.force_login(self.viewer)
+
+    def test_lobby_shows_start_duration_and_winner_result(self) -> None:
+        """Finished games show duration and color the winner relative to the viewer."""
+        viewer_win = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            winner=self.viewer,
+            status=Game.Status.FINISHED,
+            victory_type=Game.VictoryType.OIN,
+        )
+        opponent_win = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            winner=self.opponent,
+            status=Game.Status.FINISHED,
+            victory_type=Game.VictoryType.OIN,
+        )
+        Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            current_player=self.viewer,
+            status=Game.Status.ACTIVE,
+        )
+        Game.objects.create(white_player=self.viewer, status=Game.Status.WAITING)
+        Game.objects.filter(pk=viewer_win.pk).update(
+            created_at=datetime(2026, 5, 3, 10, 0, tzinfo=datetime_timezone.utc),
+            finished_at=datetime(2026, 5, 3, 11, 23, tzinfo=datetime_timezone.utc),
+        )
+        Game.objects.filter(pk=opponent_win.pk).update(
+            created_at=datetime(2026, 5, 3, 12, 0, tzinfo=datetime_timezone.utc),
+            finished_at=datetime(2026, 5, 3, 12, 5, tzinfo=datetime_timezone.utc),
+        )
+
+        response = self.client.get(reverse("backgammon:game_list"))
+
+        self.assertContains(response, "03.05.2026 10:00")
+        self.assertNotContains(response, "🗓️")
+        self.assertContains(response, "⌛ 1 час 23 мин")
+        self.assertContains(response, "viewer ⇆ opponent")
+        self.assertContains(response, "победа")
+        self.assertContains(response, "text-bg-success")
+        self.assertContains(response, "поражение")
+        self.assertContains(response, "text-bg-danger")
+        self.assertContains(response, "игра в процессе ...")
+        self.assertContains(response, "ожидание соперника")
+        self.assertNotContains(response, "Waiting for opponent")
+        self.assertNotContains(response, "Победил:")
+        self.assertNotContains(response, "Active")
+        self.assertNotContains(response, "Finished")
+
 
 class GameDebugToolsTests(TestCase):
     """Coverage for debug-only game helper controls and endpoints."""
@@ -382,6 +526,15 @@ class GameDebugToolsTests(TestCase):
         )
 
         self.assertContains(response, 'data-animations-enabled="0"')
+
+    @override_settings(BACKGAMMON_POLL_INTERVAL_MS=750)
+    def test_poll_interval_setting_renders_for_frontend(self) -> None:
+        """The frontend receives the configured state polling interval."""
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(response, 'data-poll-interval-ms="750"')
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=False)
     def test_debug_buttons_and_endpoint_are_disabled_when_setting_is_off(self) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
@@ -13,6 +14,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .models import Game, GameMove, PlayerStats
@@ -24,8 +26,34 @@ from .services import (
     create_roll,
     finish_blocked_turn,
     serialize_game,
+    surrender_game,
     undo_last_move,
 )
+
+
+def game_duration_label(duration: timedelta) -> str:
+    """Return a compact Russian duration label for the lobby."""
+    total_minutes = max(int(duration.total_seconds() // 60), 0)
+    days, day_minutes = divmod(total_minutes, 24 * 60)
+    hours, minutes = divmod(day_minutes, 60)
+    parts = []
+    if days:
+        parts.append(f"{days} д")
+    if hours:
+        hour_word = "час" if hours == 1 else "часа" if 2 <= hours <= 4 else "часов"
+        parts.append(f"{hours} {hour_word}")
+    if minutes or not parts:
+        parts.append(f"{minutes} мин")
+    return " ".join(parts)
+
+
+def decorate_lobby_game(game: Game, user: Any, now: Any) -> Game:
+    """Attach display-only lobby fields to a game instance."""
+    finished_at = game.finished_at if game.status == Game.Status.FINISHED else None
+    end_time = finished_at or now
+    game.duration_label = game_duration_label(end_time - game.created_at)
+    game.winner_is_viewer = bool(game.winner_id and game.winner_id == user.id)
+    return game
 
 
 def signup(request: HttpRequest) -> HttpResponse:
@@ -50,12 +78,19 @@ def game_list(request: HttpRequest) -> HttpResponse:
     games = Game.objects.select_related(
         "white_player", "black_player", "current_player", "winner"
     )
-    my_games = games.filter(
-        Q(white_player=request.user) | Q(black_player=request.user)
-    )[:20]
-    open_games = games.filter(status=Game.Status.WAITING).exclude(
-        white_player=request.user
-    )[:20]
+    now = timezone.now()
+    my_games = [
+        decorate_lobby_game(game, request.user, now)
+        for game in games.filter(
+            Q(white_player=request.user) | Q(black_player=request.user)
+        )[:20]
+    ]
+    open_games = [
+        decorate_lobby_game(game, request.user, now)
+        for game in games.filter(status=Game.Status.WAITING).exclude(
+            white_player=request.user
+        )[:20]
+    ]
     stats = PlayerStats.objects.filter(user=request.user).first()
     return render(
         request,
@@ -97,6 +132,7 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "game": game,
             "debug_game_tools": settings.BACKGAMMON_DEBUG_TOOLS,
             "animations_enabled": settings.BACKGAMMON_ANIMATIONS_ENABLED,
+            "poll_interval_ms": settings.BACKGAMMON_POLL_INTERVAL_MS,
         },
     )
 
@@ -210,6 +246,22 @@ def move(request: HttpRequest, pk: int) -> JsonResponse:
             payload = serialize_game(game, request.user)
     except TypeError, ValueError:
         return json_error("Некорректные параметры хода.")
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def surrender(request: HttpRequest, pk: int) -> JsonResponse:
+    """Finish the game by resigning and giving victory to the opponent."""
+    try:
+        data = get_json_body(request)
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            surrender_game(game, request.user, data.get("victory_type"))
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
