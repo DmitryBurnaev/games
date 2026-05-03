@@ -264,6 +264,14 @@ class GameRulesTests(TestCase):
         self.assertEqual(len(white_payload["last_move_markers"]), 1)
         self.assertEqual(white_payload["last_move_markers"][0]["target"], 2)
         self.assertEqual(white_payload["last_move_markers"][0]["count"], 2)
+        self.assertEqual(
+            [
+                (move["source"], move["target"])
+                for move in white_payload["last_move_steps"]
+            ],
+            [(0, 2), (1, 2)],
+        )
+        self.assertTrue(all(move["id"] for move in white_payload["last_move_steps"]))
 
     def test_arrange_checkers_in_home_prepares_bear_off_testing(self) -> None:
         """The finish-test helper moves only the user into home and resets turn."""
@@ -354,6 +362,26 @@ class GameDebugToolsTests(TestCase):
         self.assertContains(response, "В дом для теста")
         self.assertContains(response, "Тест победы")
         self.assertContains(response, "👈")
+        self.assertContains(response, 'data-debug-tools="1"')
+        self.assertContains(response, "data-prepare-bear-off-url")
+
+    @override_settings(BACKGAMMON_ANIMATIONS_ENABLED=True)
+    def test_animation_flag_renders_when_enabled(self) -> None:
+        """The frontend receives the checker animation feature flag."""
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(response, 'data-animations-enabled="1"')
+
+    @override_settings(BACKGAMMON_ANIMATIONS_ENABLED=False)
+    def test_animation_flag_renders_when_disabled(self) -> None:
+        """Checker animations can be disabled through settings."""
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(response, 'data-animations-enabled="0"')
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=False)
     def test_debug_buttons_and_endpoint_are_disabled_when_setting_is_off(self) -> None:
@@ -367,4 +395,6 @@ class GameDebugToolsTests(TestCase):
 
         self.assertNotContains(detail_response, "В дом для теста")
         self.assertNotContains(detail_response, "Тест победы")
+        self.assertContains(detail_response, 'data-debug-tools="0"')
+        self.assertNotContains(detail_response, "data-prepare-bear-off-url")
         self.assertEqual(endpoint_response.status_code, 403)

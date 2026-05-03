@@ -11,7 +11,9 @@
     const endTurnUrl = app.dataset.endTurnUrl;
     const prepareBearOffUrl = app.dataset.prepareBearOffUrl;
     const prepareVictoryUrl = app.dataset.prepareVictoryUrl;
-    const debugGameTools = Boolean(prepareBearOffUrl && prepareVictoryUrl);
+    const debugGameTools = app.dataset.debugTools === '1';
+    const moveAnimationsEnabled = app.dataset.animationsEnabled !== '0';
+    const gameDebugId = debugGameTools ? app.dataset.gameId || null : null;
     const domovoyImages = [app.dataset.domovoyOne, app.dataset.domovoyTwo].filter(Boolean);
     const csrfToken = app.querySelector('[name=csrfmiddlewaretoken]').value;
 
@@ -41,7 +43,27 @@
     let diceAnimationStartedAt = 0;
     let lastDiceKey = '';
     let lastVictoryKey = '';
+    let nextMoveAnimationAt = 0;
+    const animatedMoveKeys = new Set();
     const minDiceRollMs = 1100;
+    const moveAnimationMs = {
+        own: 300,
+        opponent: 1300,
+    };
+    const moveAnimationStaggerMs = {
+        own: 45,
+        opponent: 240,
+    };
+    const movementPaths = {
+        white: Array.from({ length: 24 }, (_, index) => index),
+        black: Array.from({ length: 12 }, (_, offset) => 12 + offset).concat(
+            Array.from({ length: 12 }, (_, offset) => offset),
+        ),
+    };
+    const moveArcPx = {
+        own: 46,
+        opponent: 92,
+    };
 
     function playerName(player) {
         return player ? player.username : 'ожидание';
@@ -186,6 +208,504 @@
         return new Promise((resolve) => window.setTimeout(resolve, ms));
     }
 
+    function stackCount(board, index, color) {
+        const stack = board && board[index];
+        if (!stack || stack.color !== color) {
+            return 0;
+        }
+        return stack.count || 0;
+    }
+
+    function rectPayload(element) {
+        if (!element) {
+            return null;
+        }
+        const rect = element.getBoundingClientRect();
+        return {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+        };
+    }
+
+    function columnLabel(index) {
+        return index === null || index === undefined ? 'off' : index + 1;
+    }
+
+    function animationTransitionPayload(transition) {
+        return {
+            id: transition.id ?? null,
+            color: transition.color,
+            source: transition.source,
+            sourceColumn: columnLabel(transition.source),
+            target: transition.target,
+            targetColumn: columnLabel(transition.target),
+        };
+    }
+
+    function pointDebugPayload(index) {
+        if (index === null || index === undefined) {
+            return null;
+        }
+        const point = boardEl.querySelector(`.point[data-index="${index}"]`);
+        const checkers = point
+            ? Array.from(point.querySelectorAll('.checker')).map((checker, checkerIndex) => ({
+                order: checkerIndex,
+                rect: rectPayload(checker),
+                className: checker.className,
+                text: checker.textContent,
+            }))
+            : [];
+        return {
+            index,
+            column: columnLabel(index),
+            row: game ? displayRowForPoint(index) : null,
+            rect: rectPayload(point),
+            checkerCount: checkers.length,
+            checkers,
+        };
+    }
+
+    function snapshotPointPayload(snapshot, index) {
+        if (index === null || index === undefined || !snapshot || !snapshot.points[index]) {
+            return null;
+        }
+        const point = snapshot.points[index];
+        return {
+            index,
+            column: columnLabel(index),
+            rect: point.rect,
+            remainingSnapshotCheckers: point.checkers.length,
+        };
+    }
+
+    function animationContextPayload() {
+        return {
+            gameId: gameDebugId,
+            viewerColor: game ? game.viewer_color : null,
+            currentPlayer: game ? game.current_player : null,
+            status: game ? game.status : null,
+            board: rectPayload(boardEl),
+            viewport: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+            },
+        };
+    }
+
+    function logAnimation(action, payload) {
+        if (!debugGameTools) {
+            return;
+        }
+        console.log('[backgammon:animation]', action, {
+            at: new Date().toISOString(),
+            ...animationContextPayload(),
+            ...payload,
+        });
+    }
+
+    function pointFallbackRect(index, color) {
+        const point = boardEl.querySelector(`.point[data-index="${index}"]`);
+        if (!point) {
+            return null;
+        }
+        const pointRect = point.getBoundingClientRect();
+        const size = Math.min(pointRect.width * 0.9, 36);
+        const top = color === 'black' ? pointRect.top + 10 : pointRect.bottom - size - 10;
+        return {
+            left: pointRect.left + (pointRect.width - size) / 2,
+            top: Math.max(pointRect.top + 8, Math.min(top, pointRect.bottom - size - 8)),
+            width: size,
+            height: size,
+        };
+    }
+
+    function captureBoardSnapshot() {
+        const snapshot = {
+            points: {},
+            off: {
+                white: rectPayload(whiteOff),
+                black: rectPayload(blackOff),
+            },
+        };
+        boardEl.querySelectorAll('.point').forEach((point) => {
+            const index = Number(point.dataset.index);
+            const checkers = Array.from(point.querySelectorAll('.checker')).map((checker) => ({
+                rect: rectPayload(checker),
+                className: checker.className,
+                text: checker.textContent,
+            }));
+            snapshot.points[index] = {
+                rect: rectPayload(point),
+                checkers,
+            };
+        });
+        return snapshot;
+    }
+
+    function moveAnimationKey(move) {
+        if (move.id !== undefined && move.id !== null) {
+            return `move:${move.id}`;
+        }
+        return [
+            'move',
+            move.color,
+            move.source,
+            move.target,
+            move.distance,
+            move.action,
+        ].join(':');
+    }
+
+    function visibleMoveSteps(nextGame) {
+        return Array.isArray(nextGame && nextGame.last_move_steps)
+            ? nextGame.last_move_steps
+            : [];
+    }
+
+    function seedAnimatedMoveKeys(nextGame) {
+        visibleMoveSteps(nextGame).forEach((move) => {
+            animatedMoveKeys.add(moveAnimationKey(move));
+        });
+    }
+
+    function newMoveStepTransitions(nextGame) {
+        return visibleMoveSteps(nextGame)
+            .filter((move) => {
+                const key = moveAnimationKey(move);
+                if (animatedMoveKeys.has(key)) {
+                    return false;
+                }
+                animatedMoveKeys.add(key);
+                return true;
+            })
+            .map((move) => ({
+                id: move.id,
+                color: move.color,
+                source: move.source,
+                target: move.target,
+            }));
+    }
+
+    function pointPathPosition(color, point) {
+        return movementPaths[color].indexOf(point);
+    }
+
+    function pathDistance(color, source, target) {
+        const sourcePosition = pointPathPosition(color, source);
+        const targetPosition = pointPathPosition(color, target);
+        if (sourcePosition < 0 || targetPosition < 0) {
+            return Number.POSITIVE_INFINITY;
+        }
+        return (targetPosition - sourcePosition + 24) % 24 || 24;
+    }
+
+    function expandChange(point, count) {
+        return Array.from({ length: count }, () => ({ point }));
+    }
+
+    function inferCheckerTransitions(previousGame, nextGame) {
+        if (!previousGame || !nextGame) {
+            return [];
+        }
+        const transitions = [];
+        ['white', 'black'].forEach((color) => {
+            let sources = [];
+            let targets = [];
+            for (let index = 0; index < 24; index += 1) {
+                const delta = stackCount(nextGame.board, index, color) - stackCount(previousGame.board, index, color);
+                if (delta < 0) {
+                    sources = sources.concat(expandChange(index, Math.abs(delta)));
+                } else if (delta > 0) {
+                    targets = targets.concat(expandChange(index, delta));
+                }
+            }
+
+            const previousOff = previousGame.borne_off[color] || 0;
+            const nextOff = nextGame.borne_off[color] || 0;
+            if (nextOff > previousOff) {
+                targets = targets.concat(expandChange(null, nextOff - previousOff));
+            } else if (previousOff > nextOff) {
+                sources = sources.concat(expandChange(null, previousOff - nextOff));
+            }
+
+            sources.forEach((source) => {
+                if (!targets.length) {
+                    return;
+                }
+                let bestIndex = 0;
+                let bestDistance = Number.POSITIVE_INFINITY;
+                targets.forEach((target, targetIndex) => {
+                    const distance = source.point === null || target.point === null
+                        ? 24
+                        : pathDistance(color, source.point, target.point);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestIndex = targetIndex;
+                    }
+                });
+                const [target] = targets.splice(bestIndex, 1);
+                transitions.push({
+                    color,
+                    source: source.point,
+                    target: target.point,
+                });
+            });
+        });
+        return transitions;
+    }
+
+    function takeStartChecker(snapshot, transition) {
+        if (transition.source === null) {
+            return {
+                rect: snapshot.off[transition.color],
+                className: `checker ${transition.color}`,
+                text: '',
+            };
+        }
+        const point = snapshot.points[transition.source];
+        const checker = point && point.checkers.shift();
+        if (checker) {
+            return checker;
+        }
+        return {
+            rect: pointFallbackRect(transition.source, transition.color),
+            className: `checker ${transition.color}`,
+            text: '',
+        };
+    }
+
+    function movingCheckerClass(className, color) {
+        return (className || `checker ${color}`)
+            .replace(/\blast-move-checker\b/g, '')
+            .replace(/\bmove-arrival-hidden\b/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function takeArrivalChecker(transition) {
+        if (transition.target === null) {
+            return {
+                rect: rectPayload(transition.color === 'white' ? whiteOff : blackOff),
+                element: null,
+            };
+        }
+        const point = boardEl.querySelector(`.point[data-index="${transition.target}"]`);
+        const checkers = point
+            ? Array.from(point.querySelectorAll(`.checker.${transition.color}:not(.move-arrival-hidden)`))
+            : [];
+        const checker = checkers[0];
+        if (checker) {
+            checker.classList.add('move-arrival-hidden');
+            return {
+                rect: rectPayload(checker),
+                element: checker,
+            };
+        }
+        return {
+            rect: pointFallbackRect(transition.target, transition.color),
+            element: null,
+        };
+    }
+
+    function movementSpeedFor(transition, defaultSpeed) {
+        if (defaultSpeed && defaultSpeed !== 'auto') {
+            return defaultSpeed;
+        }
+        return transition.color === game.viewer_color ? 'own' : 'opponent';
+    }
+
+    function moveAnimationTiming(transition, defaultSpeed) {
+        const speed = movementSpeedFor(transition, defaultSpeed);
+        return {
+            speed,
+            duration: moveAnimationMs[speed] || moveAnimationMs.opponent,
+            stagger: moveAnimationStaggerMs[speed] || moveAnimationStaggerMs.opponent,
+        };
+    }
+
+    function animateCheckerTransition(transition, snapshot, delay, defaultSpeed) {
+        const scheduledAt = debugGameTools ? Date.now() : 0;
+        const timing = moveAnimationTiming(transition, defaultSpeed);
+        const transitionPayload = debugGameTools ? animationTransitionPayload(transition) : null;
+        if (debugGameTools) {
+            logAnimation('schedule-transition', {
+                transition: transitionPayload,
+                delay,
+                timing,
+                queue: {
+                    scheduledAt,
+                    nextMoveAnimationAt,
+                },
+            });
+        }
+        window.setTimeout(() => {
+            const startedAt = Date.now();
+            const start = takeStartChecker(snapshot, transition);
+            const arrival = takeArrivalChecker(transition);
+            if (!start.rect || !arrival.rect) {
+                if (arrival.element) {
+                    arrival.element.classList.remove('move-arrival-hidden');
+                }
+                if (debugGameTools) {
+                    logAnimation('skip-transition', {
+                        transition: transitionPayload,
+                        reason: !start.rect ? 'missing-start-rect' : 'missing-arrival-rect',
+                        delay,
+                        timing,
+                        sourcePoint: pointDebugPayload(transition.source),
+                        targetPoint: pointDebugPayload(transition.target),
+                        sourceSnapshotPoint: snapshotPointPayload(snapshot, transition.source),
+                        start: {
+                            rect: start.rect,
+                            className: start.className,
+                            text: start.text,
+                        },
+                        arrival: {
+                            rect: arrival.rect,
+                            hasElement: Boolean(arrival.element),
+                        },
+                    });
+                }
+                return;
+            }
+
+            const wrapper = document.createElement('span');
+            const checker = document.createElement('span');
+            checker.className = `${movingCheckerClass(start.className, transition.color)} moving-checker`;
+            checker.textContent = start.text || '';
+            wrapper.className = 'moving-checker-wrap';
+            wrapper.style.left = `${start.rect.left}px`;
+            wrapper.style.top = `${start.rect.top}px`;
+            wrapper.style.width = `${start.rect.width}px`;
+            wrapper.style.height = `${start.rect.height}px`;
+            wrapper.style.transitionDuration = `${timing.duration}ms`;
+            const arcHeight = (timing.speed === 'opponent' ? 1 : -1) * (moveArcPx[timing.speed] || moveArcPx.opponent);
+            checker.style.setProperty('--move-arc-height', `${arcHeight}px`);
+            checker.style.width = `${start.rect.width}px`;
+            checker.style.height = `${start.rect.height}px`;
+            checker.style.animationDuration = `${timing.duration}ms`;
+            wrapper.appendChild(checker);
+            document.body.appendChild(wrapper);
+
+            const dx = arrival.rect.left - start.rect.left;
+            const dy = arrival.rect.top - start.rect.top;
+            if (debugGameTools) {
+                logAnimation('start-transition', {
+                    transition: transitionPayload,
+                    waitedMs: startedAt - scheduledAt,
+                    delay,
+                    timing,
+                    coordinates: {
+                        start: start.rect,
+                        arrival: arrival.rect,
+                        dx,
+                        dy,
+                        arcHeight,
+                    },
+                    sourcePoint: pointDebugPayload(transition.source),
+                    targetPoint: pointDebugPayload(transition.target),
+                    sourceSnapshotPoint: snapshotPointPayload(snapshot, transition.source),
+                });
+            }
+            const cleanup = () => {
+                wrapper.remove();
+                if (arrival.element) {
+                    arrival.element.classList.remove('move-arrival-hidden');
+                }
+                if (debugGameTools) {
+                    logAnimation('finish-transition', {
+                        transition: transitionPayload,
+                        elapsedMs: Date.now() - startedAt,
+                        timing,
+                    });
+                }
+            };
+
+            window.requestAnimationFrame(() => {
+                wrapper.style.transform = `translate(${dx}px, ${dy}px)`;
+            });
+            window.setTimeout(cleanup, timing.duration + 90);
+        }, delay);
+    }
+
+    function animateCheckerTransitions(transitions, snapshot, defaultSpeed, source) {
+        if (!transitions.length) {
+            return;
+        }
+        const now = Date.now();
+        let delay = Math.max(0, nextMoveAnimationAt - now);
+        let queueEndDelay = delay;
+        if (debugGameTools) {
+            logAnimation('schedule-batch', {
+                source,
+                defaultSpeed,
+                count: transitions.length,
+                transitions: transitions.map(animationTransitionPayload),
+                queue: {
+                    now,
+                    nextMoveAnimationAt,
+                    initialDelay: delay,
+                },
+            });
+        }
+
+        transitions.forEach((transition) => {
+            const timing = moveAnimationTiming(transition, defaultSpeed);
+            animateCheckerTransition(transition, snapshot, delay, defaultSpeed);
+            queueEndDelay = Math.max(queueEndDelay, delay + timing.duration + 90);
+            delay += timing.speed === 'opponent'
+                ? timing.duration + timing.stagger
+                : timing.stagger;
+        });
+
+        nextMoveAnimationAt = now + queueEndDelay;
+        if (debugGameTools) {
+            logAnimation('batch-queued', {
+                source,
+                count: transitions.length,
+                queue: {
+                    now,
+                    queueEndDelay,
+                    nextMoveAnimationAt,
+                },
+            });
+        }
+    }
+
+    function applyGameState(nextGame, defaultAnimationSpeed) {
+        if (!moveAnimationsEnabled) {
+            game = nextGame;
+            render();
+            seedAnimatedMoveKeys(nextGame);
+            return;
+        }
+        const previousGame = game;
+        const snapshot = previousGame ? captureBoardSnapshot() : null;
+        const transitions = previousGame ? newMoveStepTransitions(nextGame) : [];
+        game = nextGame;
+        render();
+        if (!snapshot) {
+            seedAnimatedMoveKeys(nextGame);
+            return;
+        }
+        const fallbackTransitions = transitions.length
+            ? []
+            : inferCheckerTransitions(previousGame, nextGame);
+        const animationSource = transitions.length ? 'last_move_steps' : 'board_diff';
+        animateCheckerTransitions(
+            transitions.length ? transitions : fallbackTransitions,
+            snapshot,
+            defaultAnimationSpeed || 'auto',
+            animationSource,
+        );
+        if (animatedMoveKeys.size > 500) {
+            animatedMoveKeys.clear();
+            seedAnimatedMoveKeys(nextGame);
+        }
+    }
+
     async function finishDiceAnimation(values) {
         const elapsed = Date.now() - diceAnimationStartedAt;
         if (elapsed < minDiceRollMs) {
@@ -226,6 +746,11 @@
         return movedCheckerCount(index) > 0;
     }
 
+    function displayRowForPoint(index) {
+        const rows = displayRows();
+        return rows.top.includes(index) ? 'top' : 'bottom';
+    }
+
     function checkerHtml(stack, index) {
         if (!stack) {
             return '';
@@ -233,10 +758,13 @@
         const visible = Math.min(stack.count, 5);
         const hidden = stack.count - visible;
         const highlighted = Math.min(movedCheckerCount(index), visible);
+        const highlightFromStart = displayRowForPoint(index) === 'bottom';
         const firstHighlighted = visible - highlighted;
         let html = '<div class="stack">';
         for (let i = 0; i < visible; i += 1) {
-            const isMovedChecker = highlighted > 0 && i >= firstHighlighted;
+            const isMovedChecker = highlighted > 0 && (
+                highlightFromStart ? i < highlighted : i >= firstHighlighted
+            );
             const markerClass = isMovedChecker ? ' last-move-checker' : '';
             html += `<span class="checker ${stack.color}${markerClass}">${i === visible - 1 && hidden > 0 ? '+' + hidden : ''}</span>`;
         }
@@ -275,12 +803,12 @@
     async function submitMove(source, distance) {
         try {
             showError('');
-            game = await requestJson(moveUrl, {
+            const nextGame = await requestJson(moveUrl, {
                 method: 'POST',
                 body: { source, distance },
             });
             selectedSource = null;
-            render();
+            applyGameState(nextGame, 'own');
         } catch (error) {
             showError(error.message);
         }
@@ -319,7 +847,8 @@
         if (selectedSource === index) {
             point.classList.add('selected');
         }
-        point.innerHTML = `<span class="point-label">${index + 1}</span>${checkerHtml(game.board[index], index)}`;
+        const pointLabel = debugGameTools ? `<span class="point-label">${index + 1}</span>` : '';
+        point.innerHTML = `${pointLabel}${checkerHtml(game.board[index], index)}`;
         point.addEventListener('click', () => {
             if (selectedSource !== null) {
                 const targetMove = moveToPoint(selectedSource, index);
@@ -445,8 +974,8 @@
 
     async function loadState() {
         try {
-            game = await requestJson(stateUrl, { method: 'GET' });
-            render();
+            const nextGame = await requestJson(stateUrl, { method: 'GET' });
+            applyGameState(nextGame, 'auto');
         } catch (error) {
             showError(error.message);
         }
@@ -458,13 +987,12 @@
             startDiceAnimation();
             const nextGame = await requestJson(rollUrl, { method: 'POST' });
             await finishDiceAnimation(nextGame.dice);
-            game = nextGame;
+            selectedSource = null;
+            applyGameState(nextGame, 'auto');
             lastDiceKey = JSON.stringify(game.dice || []);
             if (game.dice.length === 2 && game.dice[0] === game.dice[1]) {
                 showDomovoy();
             }
-            selectedSource = null;
-            render();
         } catch (error) {
             await finishDiceAnimation(game ? game.dice : []);
             showError(error.message);
@@ -474,9 +1002,9 @@
     endTurnButton.addEventListener('click', async () => {
         try {
             showError('');
-            game = await requestJson(endTurnUrl, { method: 'POST' });
+            const nextGame = await requestJson(endTurnUrl, { method: 'POST' });
             selectedSource = null;
-            render();
+            applyGameState(nextGame, 'auto');
         } catch (error) {
             showError(error.message);
         }
@@ -485,9 +1013,9 @@
     undoButton.addEventListener('click', async () => {
         try {
             showError('');
-            game = await requestJson(undoUrl, { method: 'POST' });
+            const nextGame = await requestJson(undoUrl, { method: 'POST' });
             selectedSource = null;
-            render();
+            applyGameState(nextGame, 'own');
         } catch (error) {
             showError(error.message);
         }
@@ -497,10 +1025,10 @@
         prepareBearOffButton.addEventListener('click', async () => {
             try {
                 showError('');
-                game = await requestJson(prepareBearOffUrl, { method: 'POST' });
-                lastDiceKey = JSON.stringify(game.dice || []);
+                const nextGame = await requestJson(prepareBearOffUrl, { method: 'POST' });
                 selectedSource = null;
-                render();
+                applyGameState(nextGame, 'own');
+                lastDiceKey = JSON.stringify(game.dice || []);
             } catch (error) {
                 showError(error.message);
             }
@@ -511,10 +1039,10 @@
         prepareVictoryButton.addEventListener('click', async () => {
             try {
                 showError('');
-                game = await requestJson(prepareVictoryUrl, { method: 'POST' });
-                lastDiceKey = JSON.stringify(game.dice || []);
+                const nextGame = await requestJson(prepareVictoryUrl, { method: 'POST' });
                 selectedSource = null;
-                render();
+                applyGameState(nextGame, 'own');
+                lastDiceKey = JSON.stringify(game.dice || []);
             } catch (error) {
                 showError(error.message);
             }

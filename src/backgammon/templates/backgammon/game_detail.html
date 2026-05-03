@@ -11,6 +11,9 @@
     data-move-url="{% url 'backgammon:move' game.pk %}"
     data-undo-url="{% url 'backgammon:undo_move' game.pk %}"
     data-end-turn-url="{% url 'backgammon:end_turn' game.pk %}"
+    data-game-id="{{ game.pk }}"
+    data-debug-tools="{% if debug_game_tools %}1{% else %}0{% endif %}"
+    data-animations-enabled="{% if animations_enabled %}1{% else %}0{% endif %}"
     {% if debug_game_tools %}
     data-prepare-bear-off-url="{% url 'backgammon:prepare_bear_off' game.pk %}"
     data-prepare-victory-url="{% url 'backgammon:prepare_victory' game.pk %}"
@@ -84,5 +87,5 @@
     </div>
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=17"></script>
+<script src="{% static 'backgammon/game.js' %}?v=32"></script>
 {% endblock %}

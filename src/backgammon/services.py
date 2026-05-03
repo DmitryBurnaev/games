@@ -359,6 +359,7 @@ def last_move_markers(game: Game, viewer: Any) -> list[MarkerPayload]:
         marker["count"] += 1
         marker["moves"].append(
             {
+                "id": move.id,
                 "source": move.source_point,
                 "target": move.target_point,
                 "distance": move.distance,
@@ -367,6 +368,27 @@ def last_move_markers(game: Game, viewer: Any) -> list[MarkerPayload]:
         )
 
     return list(markers_by_target.values())
+
+
+def last_move_steps(game: Game, viewer: Any) -> list[MovePayload]:
+    """Return visible checker moves in chronological order for UI animation."""
+    marker_player = move_marker_player(game, viewer)
+    if not marker_player:
+        return []
+
+    color = game.color_for(marker_player)
+    return [
+        {
+            "id": move.id,
+            "player": player_payload(marker_player),
+            "color": color,
+            "source": move.source_point,
+            "target": move.target_point,
+            "distance": move.distance,
+            "action": move.action,
+        }
+        for move in checker_moves_for_current_roll(game, marker_player)
+    ]
 
 
 def last_move_marker(game: Game, viewer: Any) -> MarkerPayload | None:
@@ -407,6 +429,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "can_undo": can_undo_last_move(game, viewer),
         "last_move_marker": last_move_marker(game, viewer),
         "last_move_markers": last_move_markers(game, viewer),
+        "last_move_steps": last_move_steps(game, viewer),
         "legal_moves": viewer_moves,
     }
 
