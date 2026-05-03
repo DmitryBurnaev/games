@@ -379,15 +379,31 @@ body {
 }
 
 .point-label {
-    display: none;
+    position: absolute;
+    z-index: 7;
+    display: grid;
+    place-items: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 .28rem;
+    border-radius: 999px;
+    background: rgba(255, 247, 214, .78);
+    color: rgba(44, 26, 13, .9);
+    font-size: .68rem;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow:
+        inset 0 0 0 1px rgba(82, 45, 19, .24),
+        0 1px 2px rgba(44, 26, 13, .18);
+    pointer-events: none;
 }
 
 .board-row.top .point-label {
-    bottom: .2rem;
+    bottom: .22rem;
 }
 
 .board-row.bottom .point-label {
-    top: .2rem;
+    top: .22rem;
 }
 
 .stack {
@@ -444,12 +460,46 @@ body {
     animation: last-move-pulse 1.15s ease-in-out infinite;
 }
 
+.checker.move-arrival-hidden {
+    opacity: 0;
+    animation: none;
+}
+
+.moving-checker-wrap {
+    position: fixed;
+    z-index: 1000;
+    pointer-events: none;
+    margin: 0;
+    transition-property: transform;
+    transition-timing-function: cubic-bezier(.2, .78, .18, 1);
+    will-change: transform;
+}
+
+.checker.moving-checker {
+    width: 100%;
+    max-width: none;
+    animation-name: checker-move-arc;
+    animation-timing-function: cubic-bezier(.2, .78, .18, 1);
+    animation-fill-mode: both;
+    will-change: transform;
+}
+
 .point.last-move-point:not(.legal-source):not(.legal-target):not(.selected) {
     box-shadow:
         inset 0 0 0 2px rgba(255, 212, 59, .58),
         inset 0 9px 12px rgba(255, 236, 178, .2),
         inset 0 -10px 14px rgba(65, 34, 14, .24),
         0 0 0 2px rgba(25, 135, 84, .18);
+}
+
+@keyframes checker-move-arc {
+    0%,
+    100% {
+        transform: translateY(0) scale(1);
+    }
+    48% {
+        transform: translateY(var(--move-arc-height, -64px)) scale(1.06);
+    }
 }
 
 @keyframes last-move-pulse {

@@ -49,6 +49,7 @@ if not SECRET_KEY:
 BACKGAMMON_DEBUG_TOOLS = os.environ.get(
     "BACKGAMMON_DEBUG_TOOLS", str(DEBUG)
 ).lower() in {"1", "true", "yes", "on"}
+BACKGAMMON_ANIMATIONS_ENABLED = env_bool("BACKGAMMON_ANIMATIONS_ENABLED", True)
 ALLOW_USER_REGISTRATION = env_bool("ALLOW_USER_REGISTRATION", False)
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])

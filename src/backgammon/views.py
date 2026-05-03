@@ -96,6 +96,7 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
         {
             "game": game,
             "debug_game_tools": settings.BACKGAMMON_DEBUG_TOOLS,
+            "animations_enabled": settings.BACKGAMMON_ANIMATIONS_ENABLED,
         },
     )
 
