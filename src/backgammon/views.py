@@ -4,6 +4,7 @@ import json
 import random
 from datetime import timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib import messages
@@ -22,6 +23,7 @@ from .services import (
     GameError,
     apply_move,
     arrange_checkers_for_victory_test,
+    arrange_extra_head_move_test,
     arrange_checkers_in_home,
     create_roll,
     finish_blocked_turn,
@@ -30,9 +32,21 @@ from .services import (
     undo_last_move,
 )
 
+MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+
+
+def moscow_datetime_label(value: Any) -> str:
+    """Format an aware datetime for the lobby in Moscow time."""
+    return timezone.localtime(value, MOSCOW_TZ).strftime("%d.%m.%Y %H:%M")
+
+
+def effective_game_started_at(game: Game) -> Any:
+    """Return the real game start time, falling back for older rows."""
+    return game.started_at or game.created_at
+
 
 def game_duration_label(duration: timedelta) -> str:
-    """Return a compact Russian duration label for the lobby."""
+    """Return a compact Russian duration label."""
     total_minutes = max(int(duration.total_seconds() // 60), 0)
     days, day_minutes = divmod(total_minutes, 24 * 60)
     hours, minutes = divmod(day_minutes, 60)
@@ -47,11 +61,19 @@ def game_duration_label(duration: timedelta) -> str:
     return " ".join(parts)
 
 
-def decorate_lobby_game(game: Game, user: Any, now: Any) -> Game:
+def effective_game_finished_at(game: Game, now: Any) -> Any:
+    """Return the duration end point for the lobby."""
+    if game.status == Game.Status.FINISHED and game.finished_at:
+        return game.finished_at
+    return now
+
+
+def decorate_lobby_game(game: Game, user: Any) -> Game:
     """Attach display-only lobby fields to a game instance."""
-    finished_at = game.finished_at if game.status == Game.Status.FINISHED else None
-    end_time = finished_at or now
-    game.duration_label = game_duration_label(end_time - game.created_at)
+    started_at = effective_game_started_at(game)
+    ended_at = effective_game_finished_at(game, timezone.now())
+    game.started_at_label = moscow_datetime_label(started_at)
+    game.duration_label = game_duration_label(ended_at - started_at)
     game.winner_is_viewer = bool(game.winner_id and game.winner_id == user.id)
     return game
 
@@ -78,15 +100,14 @@ def game_list(request: HttpRequest) -> HttpResponse:
     games = Game.objects.select_related(
         "white_player", "black_player", "current_player", "winner"
     )
-    now = timezone.now()
     my_games = [
-        decorate_lobby_game(game, request.user, now)
+        decorate_lobby_game(game, request.user)
         for game in games.filter(
             Q(white_player=request.user) | Q(black_player=request.user)
         )[:20]
     ]
     open_games = [
-        decorate_lobby_game(game, request.user, now)
+        decorate_lobby_game(game, request.user)
         for game in games.filter(status=Game.Status.WAITING).exclude(
             white_player=request.user
         )[:20]
@@ -294,6 +315,23 @@ def prepare_victory(request: HttpRequest, pk: int) -> JsonResponse:
         with transaction.atomic():
             game = get_participant_game(pk, request.user, for_update=True)
             arrange_checkers_for_victory_test(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def prepare_extra_head_move(request: HttpRequest, pk: int) -> JsonResponse:
+    """Prepare a first-turn blocked-head position for testing."""
+    if not settings.BACKGAMMON_DEBUG_TOOLS:
+        return json_error("Отладочные игровые инструменты выключены.", status=403)
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            arrange_extra_head_move_test(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
     except GameError as exc:

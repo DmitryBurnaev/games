@@ -12,6 +12,7 @@
     const endTurnUrl = app.dataset.endTurnUrl;
     const prepareBearOffUrl = app.dataset.prepareBearOffUrl;
     const prepareVictoryUrl = app.dataset.prepareVictoryUrl;
+    const prepareExtraHeadMoveUrl = app.dataset.prepareExtraHeadMoveUrl;
     const debugGameTools = app.dataset.debugTools === '1';
     const moveAnimationsEnabled = app.dataset.animationsEnabled !== '0';
     const configuredPollIntervalMs = parseInt(app.dataset.pollIntervalMs || '1000', 10);
@@ -24,19 +25,24 @@
     const gameSide = document.querySelector('.game-side');
     const statusLine = document.getElementById('status-line');
     const errorLine = document.getElementById('error-line');
+    const dicePanel = document.getElementById('dice-panel');
     const diceRow = document.getElementById('dice-row');
     const remainingRow = document.getElementById('remaining-row');
     const movePanel = document.getElementById('move-panel');
+    const finishedStatsPanel = document.getElementById('finished-stats-panel');
+    const controlPanel = document.getElementById('control-panel');
     const rollButton = document.getElementById('roll-button');
     const undoButton = document.getElementById('undo-button');
     const endTurnButton = document.getElementById('end-turn-button');
     const surrenderButton = document.getElementById('surrender-button');
     const prepareBearOffButton = document.getElementById('prepare-bear-off-button');
     const prepareVictoryButton = document.getElementById('prepare-victory-button');
+    const prepareExtraHeadMoveButton = document.getElementById('prepare-extra-head-move-button');
     const domovoyPop = document.getElementById('domovoy-pop');
     const domovoyImage = document.getElementById('domovoy-image');
     const whitePlayer = document.getElementById('white-player');
     const blackPlayer = document.getElementById('black-player');
+    const offBoard = document.getElementById('off-board');
     const whiteOff = document.getElementById('white-off');
     const blackOff = document.getElementById('black-off');
 
@@ -45,6 +51,7 @@
     let diceTimer = null;
     let diceAnimating = false;
     let diceAnimationStartedAt = 0;
+    let domovoyTimer = null;
     let lastDiceKey = '';
     let lastVictoryKey = '';
     let nextMoveAnimationAt = 0;
@@ -87,6 +94,46 @@
     function victoryLabel(winner, type) {
         const typeName = victoryTypeName(type);
         return typeName ? `${winner} · ${typeName}` : winner;
+    }
+
+    function gameStartIso() {
+        return game.started_at || game.created_at;
+    }
+
+    function moscowDateTimeLabel(value) {
+        if (!value) {
+            return '—';
+        }
+        return new Intl.DateTimeFormat('ru-RU', {
+            timeZone: 'Europe/Moscow',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        }).format(new Date(value)).replace(',', '');
+    }
+
+    function durationLabel(start, finish) {
+        if (!start || !finish) {
+            return '—';
+        }
+        const totalMinutes = Math.max(Math.floor((new Date(finish) - new Date(start)) / 60000), 0);
+        const days = Math.floor(totalMinutes / 1440);
+        const hours = Math.floor((totalMinutes % 1440) / 60);
+        const minutes = totalMinutes % 60;
+        const parts = [];
+        if (days) {
+            parts.push(`${days} д`);
+        }
+        if (hours) {
+            const hourWord = hours === 1 ? 'час' : (hours >= 2 && hours <= 4 ? 'часа' : 'часов');
+            parts.push(`${hours} ${hourWord}`);
+        }
+        if (minutes || !parts.length) {
+            parts.push(`${minutes} мин`);
+        }
+        return parts.join(' ');
     }
 
     function diceValueLabel(value) {
@@ -173,17 +220,21 @@
         return [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
     }
 
-    function showDomovoy() {
+    function showDomovoy(persist) {
         if (!domovoyPop || !domovoyImage || !domovoyImages.length) {
             return;
         }
+        window.clearTimeout(domovoyTimer);
         const image = domovoyImages[Math.floor(Math.random() * domovoyImages.length)];
         domovoyImage.src = image;
         domovoyPop.classList.remove('show');
         window.requestAnimationFrame(() => {
             domovoyPop.classList.add('show');
         });
-        window.setTimeout(() => {
+        if (persist) {
+            return;
+        }
+        domovoyTimer = window.setTimeout(() => {
             domovoyPop.classList.remove('show');
         }, 7600);
     }
@@ -210,7 +261,7 @@
             return;
         }
         lastVictoryKey = victoryKey;
-        showDomovoy();
+        showDomovoy(true);
     }
 
     function startDiceAnimation() {
@@ -916,6 +967,10 @@
 
     function renderMoves() {
         movePanel.innerHTML = '';
+        movePanel.hidden = game.status === 'finished';
+        if (movePanel.hidden) {
+            return;
+        }
         if (!game.legal_moves.length) {
             movePanel.innerHTML = '<div class="text-secondary small">Нет доступных ходов.</div>';
             return;
@@ -941,6 +996,35 @@
             button.addEventListener('click', () => submitMove(selectedSource, move.distance));
             movePanel.appendChild(button);
         });
+    }
+
+    function renderFinishedStats() {
+        finishedStatsPanel.classList.toggle('show', game.status === 'finished');
+        finishedStatsPanel.innerHTML = '';
+        if (game.status !== 'finished') {
+            return;
+        }
+        const start = gameStartIso();
+        const finish = game.finished_at;
+        const whiteDoubles = game.double_rolls ? game.double_rolls.white || 0 : 0;
+        const blackDoubles = game.double_rolls ? game.double_rolls.black || 0 : 0;
+        const whiteOffCount = game.borne_off && typeof game.borne_off.white === 'number' ? game.borne_off.white : 0;
+        const blackOffCount = game.borne_off && typeof game.borne_off.black === 'number' ? game.borne_off.black : 0;
+        finishedStatsPanel.innerHTML = `
+            <div class="finished-stats-title">Статистика игры</div>
+            <dl class="small">
+                <dt>🕰️ Начало</dt>
+                <dd>${moscowDateTimeLabel(start)}</dd>
+                <dt>🏁 Финиш</dt>
+                <dd>${moscowDateTimeLabel(finish)}</dd>
+                <dt>⌛ Длительность</dt>
+                <dd>${durationLabel(start, finish)}</dd>
+                <dt>🎲 Дубли</dt>
+                <dd>${playerName(game.white_player)}: ${whiteDoubles} · ${playerName(game.black_player)}: ${blackDoubles}</dd>
+                <dt>📤 Выведено</dt>
+                <dd>${playerName(game.white_player)}: ${whiteOffCount} · ${playerName(game.black_player)}: ${blackOffCount}</dd>
+            </dl>
+        `;
     }
 
     function renderDice() {
@@ -977,26 +1061,34 @@
         whitePlayer.textContent = `Белые: ${playerName(game.white_player)}`;
         blackPlayer.textContent = `Черные: ${playerName(game.black_player)}`;
         statusLine.textContent = statusText();
+        dicePanel.classList.toggle('d-none', game.status === 'finished');
         renderDice();
         const remainingLabels = diceValueLabels(game.remaining_moves);
         remainingRow.textContent = remainingLabels.length ? `Осталось: ${remainingLabels.join(', ')}` : '';
         whiteOff.textContent = game.borne_off.white || 0;
         blackOff.textContent = game.borne_off.black || 0;
+        offBoard.classList.toggle('d-none', game.status === 'finished');
+        controlPanel.classList.toggle('d-none', game.status !== 'active');
         rollButton.disabled = !game.can_roll || diceAnimating;
         undoButton.disabled = !game.can_undo || diceAnimating;
         endTurnButton.disabled = !game.can_end_turn || diceAnimating;
         surrenderButton.disabled = !game.can_surrender || diceAnimating;
+        surrenderButton.classList.toggle('d-none', game.status !== 'active');
         if (prepareBearOffButton) {
             prepareBearOffButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
         }
         if (prepareVictoryButton) {
             prepareVictoryButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
         }
+        if (prepareExtraHeadMoveButton) {
+            prepareExtraHeadMoveButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
+        }
         if (selectedSource !== null && !legalSources().has(selectedSource)) {
             selectedSource = null;
         }
         renderBoard();
         renderMoves();
+        renderFinishedStats();
         maybeShowVictoryAnimation();
     }
 
@@ -1093,6 +1185,20 @@
             try {
                 showError('');
                 const nextGame = await requestJson(prepareVictoryUrl, { method: 'POST' });
+                selectedSource = null;
+                applyGameState(nextGame, 'own');
+                lastDiceKey = JSON.stringify(game.dice || []);
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+    }
+
+    if (debugGameTools && prepareExtraHeadMoveButton) {
+        prepareExtraHeadMoveButton.addEventListener('click', async () => {
+            try {
+                showError('');
+                const nextGame = await requestJson(prepareExtraHeadMoveUrl, { method: 'POST' });
                 selectedSource = null;
                 applyGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);

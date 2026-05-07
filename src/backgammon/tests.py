@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .models import Game, PlayerStats
+from .models import Game, GameMove, PlayerStats
 from .services import (
     GameError,
     apply_move,
@@ -128,6 +128,70 @@ class GameRulesTests(TestCase):
         with self.assertRaisesMessage(GameError, "только одну шашку"):
             apply_move(game, self.white, 0, 4)
 
+    def test_first_turn_can_take_extra_from_head_when_no_other_moves_exist(
+        self,
+    ) -> None:
+        """A blocked first turn allows one extra checker to leave the head."""
+        game = self.active_game()
+        game.board = [None for _ in range(24)]
+        game.board[0] = {"color": Game.Color.WHITE, "count": 15}
+        game.board[10] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[12] = {"color": Game.Color.BLACK, "count": 14}
+        game.dice = [5, 5]
+        game.remaining_moves = [5, 5, 5, 5]
+        game.save()
+
+        apply_move(game, self.white, 0, 5)
+        game.refresh_from_db()
+
+        payload = serialize_game(game, self.white)
+        self.assertIn(
+            {"source": 0, "target": 5},
+            [
+                {"source": move["source"], "target": move["target"]}
+                for move in payload["legal_moves"]
+            ],
+        )
+
+        apply_move(game, self.white, 0, 5)
+        game.refresh_from_db()
+
+        self.assertEqual(game.head_moves_this_turn, 2)
+
+    def test_extra_head_move_is_blocked_when_non_head_move_exists(self) -> None:
+        """The emergency head move is unavailable while another move is legal."""
+        game = self.active_game()
+        game.dice = [5, 5]
+        game.remaining_moves = [5, 5, 5, 5]
+        game.save()
+
+        apply_move(game, self.white, 0, 5)
+
+        with self.assertRaisesMessage(GameError, "только одну шашку"):
+            apply_move(game, self.white, 0, 5)
+
+    def test_black_first_turn_can_take_extra_from_head_after_white_started(
+        self,
+    ) -> None:
+        """The extra head rule is tied to the color's first turn, not game turn one."""
+        game = self.active_game()
+        game.current_player = self.black
+        game.board = [None for _ in range(24)]
+        game.board[0] = {"color": Game.Color.WHITE, "count": 14}
+        game.board[12] = {"color": Game.Color.BLACK, "count": 15}
+        game.board[22] = {"color": Game.Color.WHITE, "count": 1}
+        game.dice = [5, 5]
+        game.remaining_moves = [5, 5, 5, 5]
+        game.turn_number = 2
+        game.save()
+        apply_move(game, self.black, 12, 5)
+        game.refresh_from_db()
+
+        apply_move(game, self.black, 12, 5)
+        game.refresh_from_db()
+
+        self.assertEqual(game.head_moves_this_turn, 2)
+
     def test_bear_off_last_checker_finishes_game_and_updates_stats(self) -> None:
         """Bearing off the fifteenth checker finishes the game and stats."""
         game = self.active_game()
@@ -247,6 +311,61 @@ class GameRulesTests(TestCase):
         black_payload = serialize_game(game, self.black)
         self.assertIsNone(black_payload["last_move_marker"])
         self.assertEqual(black_payload["last_move_markers"], [])
+
+    def test_first_roll_sets_game_started_at(self) -> None:
+        """The game records the real start time on the first dice roll."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+
+        create_roll(game, self.white)
+        game.refresh_from_db()
+
+        self.assertIsNotNone(game.started_at)
+
+        first_started_at = game.started_at
+        game.dice = []
+        game.remaining_moves = []
+        game.has_rolled = False
+        game.save()
+        create_roll(game, self.white)
+        game.refresh_from_db()
+
+        self.assertEqual(game.started_at, first_started_at)
+
+    def test_serialized_game_includes_timestamps_and_double_roll_counts(self) -> None:
+        """The detail UI receives final-game stats for rendering."""
+        game = self.active_game()
+        game.started_at = datetime(2026, 5, 3, 10, 5, tzinfo=datetime_timezone.utc)
+        game.finished_at = datetime(2026, 5, 3, 11, 23, tzinfo=datetime_timezone.utc)
+        game.save()
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.ROLL,
+            dice=[6, 6],
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.ROLL,
+            dice=[1, 2],
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.black,
+            action=GameMove.Action.ROLL,
+            dice=[3, 3],
+        )
+
+        payload = serialize_game(game, self.white)
+
+        self.assertEqual(payload["started_at"], "2026-05-03T10:05:00+00:00")
+        self.assertEqual(payload["finished_at"], "2026-05-03T11:23:00+00:00")
+        self.assertEqual(payload["double_rolls"], {"white": 1, "black": 1})
 
     def test_move_markers_count_multiple_checkers_on_same_point(self) -> None:
         """Markers count multiple moved checkers landing on one point."""
@@ -444,7 +563,7 @@ class GameLobbyTests(TestCase):
             black_player=self.opponent,
             winner=self.opponent,
             status=Game.Status.FINISHED,
-            victory_type=Game.VictoryType.OIN,
+            victory_type=Game.VictoryType.MARS,
         )
         Game.objects.create(
             white_player=self.viewer,
@@ -455,22 +574,39 @@ class GameLobbyTests(TestCase):
         Game.objects.create(white_player=self.viewer, status=Game.Status.WAITING)
         Game.objects.filter(pk=viewer_win.pk).update(
             created_at=datetime(2026, 5, 3, 10, 0, tzinfo=datetime_timezone.utc),
+            started_at=datetime(2026, 5, 3, 10, 5, tzinfo=datetime_timezone.utc),
             finished_at=datetime(2026, 5, 3, 11, 23, tzinfo=datetime_timezone.utc),
         )
         Game.objects.filter(pk=opponent_win.pk).update(
             created_at=datetime(2026, 5, 3, 12, 0, tzinfo=datetime_timezone.utc),
+            started_at=datetime(2026, 5, 3, 12, 1, tzinfo=datetime_timezone.utc),
             finished_at=datetime(2026, 5, 3, 12, 5, tzinfo=datetime_timezone.utc),
+        )
+        GameMove.objects.create(
+            game=viewer_win,
+            player=self.viewer,
+            action=GameMove.Action.ROLL,
+            dice=[6, 6],
+        )
+        GameMove.objects.create(
+            game=viewer_win,
+            player=self.opponent,
+            action=GameMove.Action.ROLL,
+            dice=[2, 3],
         )
 
         response = self.client.get(reverse("backgammon:game_list"))
 
-        self.assertContains(response, "03.05.2026 10:00")
+        self.assertContains(response, "03.05.2026 13:05")
+        self.assertNotContains(response, "03.05.2026 10:05")
         self.assertNotContains(response, "🗓️")
-        self.assertContains(response, "⌛ 1 час 23 мин")
+        self.assertContains(response, "⌛ 1 час 18 мин")
+        self.assertNotContains(response, "дубли:")
         self.assertContains(response, "viewer ⇆ opponent")
         self.assertContains(response, "победа")
         self.assertContains(response, "text-bg-success")
         self.assertContains(response, "поражение")
+        self.assertContains(response, "🌚")
         self.assertContains(response, "text-bg-danger")
         self.assertContains(response, "игра в процессе ...")
         self.assertContains(response, "ожидание соперника")
@@ -505,9 +641,11 @@ class GameDebugToolsTests(TestCase):
 
         self.assertContains(response, "В дом для теста")
         self.assertContains(response, "Тест победы")
+        self.assertContains(response, "Тест головы 5/5")
         self.assertContains(response, "👈")
         self.assertContains(response, 'data-debug-tools="1"')
         self.assertContains(response, "data-prepare-bear-off-url")
+        self.assertContains(response, "data-prepare-extra-head-move-url")
 
     @override_settings(BACKGAMMON_ANIMATIONS_ENABLED=True)
     def test_animation_flag_renders_when_enabled(self) -> None:
@@ -536,6 +674,49 @@ class GameDebugToolsTests(TestCase):
 
         self.assertContains(response, 'data-poll-interval-ms="750"')
 
+    def test_finished_game_hides_control_buttons_initially(self) -> None:
+        """Finished game pages render controls hidden before frontend state loads."""
+        self.game.mark_finished(self.white, Game.VictoryType.OIN)
+        self.game.save()
+
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(
+            response, 'id="control-panel" class="d-grid gap-2 mb-3 d-none"'
+        )
+        self.assertContains(
+            response,
+            'id="surrender-button" class="btn btn-outline-danger btn-sm surrender-button d-none"',
+        )
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_extra_head_debug_helper_prepares_blocked_first_turn(self) -> None:
+        """The debug endpoint prepares a 5/5 first-turn extra-head scenario."""
+        response = self.client.post(
+            reverse("backgammon:prepare_extra_head_move", kwargs={"pk": self.game.pk})
+        )
+        self.game.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(self.game.dice, [5, 5])
+        self.assertEqual(self.game.remaining_moves, [5, 5, 5, 5])
+        self.assertEqual(self.game.current_player, self.white)
+
+        apply_move(self.game, self.white, 0, 5)
+        self.game.refresh_from_db()
+
+        payload = serialize_game(self.game, self.white)
+        self.assertIn(
+            {"source": 0, "target": 5},
+            [
+                {"source": move["source"], "target": move["target"]}
+                for move in payload["legal_moves"]
+            ],
+        )
+
     @override_settings(BACKGAMMON_DEBUG_TOOLS=False)
     def test_debug_buttons_and_endpoint_are_disabled_when_setting_is_off(self) -> None:
         """Debug buttons are hidden and helper endpoints reject requests."""
@@ -545,9 +726,15 @@ class GameDebugToolsTests(TestCase):
         endpoint_response = self.client.post(
             reverse("backgammon:prepare_bear_off", kwargs={"pk": self.game.pk})
         )
+        extra_head_response = self.client.post(
+            reverse("backgammon:prepare_extra_head_move", kwargs={"pk": self.game.pk})
+        )
 
         self.assertNotContains(detail_response, "В дом для теста")
         self.assertNotContains(detail_response, "Тест победы")
+        self.assertNotContains(detail_response, "Тест головы 5/5")
         self.assertContains(detail_response, 'data-debug-tools="0"')
         self.assertNotContains(detail_response, "data-prepare-bear-off-url")
+        self.assertNotContains(detail_response, "data-prepare-extra-head-move-url")
         self.assertEqual(endpoint_response.status_code, 403)
+        self.assertEqual(extra_head_response.status_code, 403)

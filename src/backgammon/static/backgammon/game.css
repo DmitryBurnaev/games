@@ -36,7 +36,10 @@ body {
     background: #fff;
     border: 1px solid #ded7ca;
     border-radius: 8px;
+    height: calc(100% - 38px);
+    min-height: calc(100% - 38px);
     padding: 1rem;
+    position: relative;
     transition: background-color .25s ease, border-color .25s ease, box-shadow .25s ease;
 }
 
@@ -90,9 +93,12 @@ body {
     background: #222;
 }
 
-.dice-panel,
-.move-panel {
+.dice-panel {
     min-height: 72px;
+}
+
+.move-panel {
+    min-height: 36px;
 }
 
 .dice-row {
@@ -163,6 +169,51 @@ body {
 .turn-actions #undo-button {
     font-size: 1.15rem;
     line-height: 1;
+}
+
+.surrender-button {
+    position: absolute;
+    right: 1rem;
+    bottom: 1rem;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    line-height: 1;
+}
+
+.finished-stats-panel {
+    display: none;
+    margin-top: 1rem;
+    padding-bottom: 5.5rem;
+}
+
+.finished-stats-panel.show {
+    display: block;
+}
+
+.finished-stats-title {
+    color: #2b3035;
+    font-size: 1.08rem;
+    font-weight: 700;
+    margin-bottom: .65rem;
+}
+
+.finished-stats-panel dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    gap: .4rem .75rem;
+    margin: 0;
+}
+
+.finished-stats-panel dt {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.finished-stats-panel dd {
+    margin: 0;
 }
 
 .board-wrap {
@@ -521,11 +572,11 @@ body {
 }
 
 .domovoy-pop {
-    position: fixed;
+    position: absolute;
     left: 1rem;
     bottom: 1rem;
     z-index: 20;
-    width: min(180px, 34vw);
+    width: min(128px, 42%);
     pointer-events: none;
     opacity: 0;
     transform: translateY(18px) scale(.94) rotate(-3deg);
