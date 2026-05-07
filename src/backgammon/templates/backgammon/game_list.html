@@ -27,12 +27,12 @@
                     <span class="d-flex flex-column gap-1">
                         <span>#{{ game.pk }} · {{ game.white_player.username }} ⇆ {% if game.black_player %}{{ game.black_player.username }}{% else %}ожидание{% endif %}</span>
                         <span class="text-secondary small">
-                            {{ game.created_at|date:"d.m.Y H:i" }} · ⌛ {{ game.duration_label }}
+                            {{ game.started_at_label }} · ⌛ {{ game.duration_label }}
                         </span>
                     </span>
                     {% if game.winner %}
                         <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">
-                            {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}
+                            {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}{% if game.victory_type == "mars" %} 🌚{% endif %}
                         </span>
                     {% elif game.status == "active" %}
                         <span class="badge text-bg-secondary flex-shrink-0">игра в процессе ...</span>
@@ -58,7 +58,7 @@
                     <span class="d-flex flex-column gap-1">
                         <span>#{{ game.pk }} · {{ game.white_player.username }}</span>
                         <span class="text-secondary small">
-                            {{ game.created_at|date:"d.m.Y H:i" }} · ⌛ {{ game.duration_label }}
+                            {{ game.started_at_label }} · ⌛ {{ game.duration_label }}
                         </span>
                     </span>
                     <span class="badge text-bg-primary flex-shrink-0">Войти</span>

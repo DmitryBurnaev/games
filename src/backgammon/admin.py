@@ -15,15 +15,16 @@ class GameAdmin(admin.ModelAdmin):
         "current_player",
         "winner",
         "victory_type",
+        "started_at",
         "created_at",
     )
-    list_filter = ("status", "victory_type", "created_at")
+    list_filter = ("status", "victory_type", "started_at", "created_at")
     search_fields = (
         "white_player__username",
         "black_player__username",
         "winner__username",
     )
-    readonly_fields = ("created_at", "updated_at", "finished_at")
+    readonly_fields = ("created_at", "updated_at", "started_at", "finished_at")
 
 
 @admin.register(GameMove)

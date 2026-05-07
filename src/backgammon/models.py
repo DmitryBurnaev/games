@@ -70,6 +70,7 @@ class Game(models.Model):
     has_rolled = models.BooleanField(default=False)
     head_moves_this_turn = models.PositiveSmallIntegerField(default=0)
     turn_number = models.PositiveIntegerField(default=1)
+    started_at = models.DateTimeField(blank=True, null=True)
     finished_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

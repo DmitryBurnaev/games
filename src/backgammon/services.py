@@ -4,6 +4,7 @@ import random
 from typing import Any
 
 from django.db.models import F, QuerySet
+from django.utils import timezone
 
 from .models import Board, Game, GameMove, PlayerStats
 
@@ -49,6 +50,25 @@ def player_payload(user: Any) -> PlayerPayload:
     return {"id": user.id, "username": user.username}
 
 
+def datetime_payload(value: Any) -> str | None:
+    """Serialize datetimes for the browser without assuming local timezone."""
+    return value.isoformat() if value else None
+
+
+def double_rolls_by_color(game: Game) -> dict[str, int]:
+    """Return double-roll counts grouped by checker color."""
+    counts = {Game.Color.WHITE: 0, Game.Color.BLACK: 0}
+    for move in game.moves.filter(action=GameMove.Action.ROLL).select_related("player"):
+        if not isinstance(move.dice, list) or len(move.dice) != 2:
+            continue
+        if move.dice[0] != move.dice[1]:
+            continue
+        color = game.color_for(move.player)
+        if color:
+            counts[color] += 1
+    return counts
+
+
 def path_position(color: Game.Color, point: int) -> int:
     """Return a point's zero-based position in a color's movement path."""
     return PATHS[color].index(point)
@@ -88,16 +108,40 @@ def max_distance_to_bear_off(board: Board, color: Game.Color) -> int:
     return max(distances) if distances else 0
 
 
-def allowed_head_moves(game: Game) -> int:
-    """Return how many checkers may leave the head this turn."""
+def is_first_turn_for_color(game: Game, user: Any) -> bool:
+    """Return whether the current roll is the first turn for this user's color."""
+    latest_roll = (
+        game.moves.filter(player=user, action=GameMove.Action.ROLL)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if latest_roll:
+        return not game.moves.filter(
+            player=user,
+            action=GameMove.Action.ROLL,
+            pk__lt=latest_roll.pk,
+        ).exists()
+    return True
+
+
+def base_allowed_head_moves(game: Game, user: Any) -> int:
+    """Return the regular number of checkers allowed to leave the head."""
     if (
-        game.turn_number == 1
+        is_first_turn_for_color(game, user)
         and len(game.dice) == 2
         and game.dice[0] == game.dice[1]
         and game.dice[0] in [3, 4, 6]
     ):
         return 2
     return 1
+
+
+def allowed_head_moves(game: Game, user: Any) -> int:
+    """Return how many checkers may leave the head this turn."""
+    allowed = base_allowed_head_moves(game, user)
+    if can_take_extra_head_checker(game, user, allowed):
+        return allowed + 1
+    return allowed
 
 
 def validate_block_rule(board: Board, color: Game.Color) -> None:
@@ -242,11 +286,47 @@ def arrange_checkers_for_victory_test(game: Game, user: Any) -> None:
     game.save()
 
 
+def arrange_extra_head_move_test(game: Game, user: Any) -> None:
+    """Prepare a first-turn position where only an extra head move is possible."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Тест головы можно подготовить только в активной игре.")
+
+    color = game.color_for(user)
+    if not color:
+        raise GameError("Вы не участвуете в этой игре.")
+
+    opponent = opponent_color(color)
+    blocked_target = PATHS[color][10]
+
+    game.moves.all().delete()
+    game.board = [None for _ in range(24)]
+    game.board[HEADS[color]] = {"color": color, "count": 15}
+    game.board[HEADS[opponent]] = {"color": opponent, "count": 14}
+    game.board[blocked_target] = {"color": opponent, "count": 1}
+    game.borne_off = {Game.Color.WHITE: 0, Game.Color.BLACK: 0}
+    game.current_player = user
+    game.dice = [5, 5]
+    game.remaining_moves = [5, 5, 5, 5]
+    game.has_rolled = True
+    game.head_moves_this_turn = 0
+    game.turn_number = 1
+    game.started_at = timezone.now()
+    game.save()
+    GameMove.objects.create(
+        game=game,
+        player=user,
+        action=GameMove.Action.ROLL,
+        dice=game.dice,
+        board=game.board,
+    )
+
+
 def validate_move(
     game: Game,
     user: Any,
     source_point: int | None,
     distance: int,
+    enforce_head_limit: bool = True,
 ) -> MovePayload:
     """Validate a move request and return the resulting action metadata."""
     if game.status != Game.Status.ACTIVE:
@@ -266,8 +346,10 @@ def validate_move(
     if not point_has_color(game.board, source_point, color):
         raise GameError("На выбранном пункте нет вашей шашки.")
 
-    if source_point == HEADS[color] and game.head_moves_this_turn >= allowed_head_moves(
-        game
+    if (
+        enforce_head_limit
+        and source_point == HEADS[color]
+        and game.head_moves_this_turn >= allowed_head_moves(game, user)
     ):
         raise GameError("За один ход можно снять с головы только одну шашку.")
 
@@ -299,6 +381,58 @@ def validate_move(
         return {"action": GameMove.Action.BEAR_OFF, "target_point": None}
 
     raise GameError("Этим кубиком нельзя выбросить выбранную шашку.")
+
+
+def has_non_head_legal_move(game: Game, user: Any) -> bool:
+    """Return whether the player can move any checker that is not on the head."""
+    color = game.color_for(user)
+    if not color:
+        return False
+    for source_point in range(24):
+        if source_point == HEADS[color] or not point_has_color(
+            game.board, source_point, color
+        ):
+            continue
+        for distance in sorted(set(game.remaining_moves)):
+            try:
+                validate_move(game, user, source_point, distance)
+            except GameError:
+                continue
+            return True
+    return False
+
+
+def can_take_extra_head_checker(
+    game: Game, user: Any, regular_head_moves: int | None = None
+) -> bool:
+    """Return whether a first-turn block allows one extra checker from the head."""
+    color = game.color_for(user)
+    if not color or not is_first_turn_for_color(game, user):
+        return False
+    regular_head_moves = (
+        regular_head_moves
+        if regular_head_moves is not None
+        else base_allowed_head_moves(game, user)
+    )
+    if regular_head_moves != 1 or game.head_moves_this_turn != regular_head_moves:
+        return False
+    if has_non_head_legal_move(game, user):
+        return False
+    if not point_has_color(game.board, HEADS[color], color):
+        return False
+    for distance in sorted(set(game.remaining_moves)):
+        try:
+            validate_move(
+                game,
+                user,
+                HEADS[color],
+                distance,
+                enforce_head_limit=False,
+            )
+        except GameError:
+            continue
+        return True
+    return False
 
 
 def legal_moves(game: Game, user: Any) -> list[MovePayload]:
@@ -433,6 +567,10 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "winner": player_payload(game.winner),
         "viewer_color": viewer_color,
         "viewer_color_name": color_name(viewer_color) if viewer_color else None,
+        "created_at": datetime_payload(game.created_at),
+        "started_at": datetime_payload(game.started_at),
+        "finished_at": datetime_payload(game.finished_at),
+        "double_rolls": double_rolls_by_color(game),
         "board": game.board,
         "borne_off": game.borne_off,
         "dice": game.dice,
@@ -490,7 +628,11 @@ def create_roll(game: Game, user: Any) -> list[int]:
     game.dice = dice
     game.remaining_moves = [dice[0]] * 4 if dice[0] == dice[1] else dice[:]
     game.has_rolled = True
-    game.save(update_fields=["dice", "remaining_moves", "has_rolled", "updated_at"])
+    update_fields = ["dice", "remaining_moves", "has_rolled", "updated_at"]
+    if game.started_at is None:
+        game.started_at = timezone.now()
+        update_fields.append("started_at")
+    game.save(update_fields=update_fields)
     GameMove.objects.create(
         game=game, player=user, action=GameMove.Action.ROLL, dice=dice, board=game.board
     )
