@@ -144,13 +144,14 @@ def allowed_head_moves(game: Game, user: Any) -> int:
     return allowed
 
 
-def validate_block_rule(board: Board, color: Game.Color) -> None:
-    """Reject illegal six-checker blocks that fully trap the opponent."""
+def blocking_event_points(board: Board, color: Game.Color) -> list[int]:
+    """Return the first illegal six-point block for a color, if present."""
     path = PATHS[color]
     opponent = opponent_color(color)
     occupied = [point_has_color(board, point, color) for point in path]
 
     for start in range(24):
+        points = [path[(start + offset) % 24] for offset in range(6)]
         if not all(occupied[(start + offset) % 24] for offset in range(6)):
             continue
         has_opponent_ahead = any(
@@ -158,9 +159,21 @@ def validate_block_rule(board: Board, color: Game.Color) -> None:
             for position in range(start + 6, start + 24)
         )
         if not has_opponent_ahead:
-            raise GameError(
-                "Нельзя строить блок из 6 шашек, если впереди блока нет шашки соперника."
-            )
+            return points
+    return []
+
+
+def has_blocking_event(board: Board, color: Game.Color) -> bool:
+    """Return whether a color currently traps the opponent with a six-block."""
+    return bool(blocking_event_points(board, color))
+
+
+def validate_block_rule(board: Board, color: Game.Color) -> None:
+    """Reject illegal six-checker blocks that fully trap the opponent."""
+    if has_blocking_event(board, color):
+        raise GameError(
+            "Нельзя строить блок из 6 шашек, если впереди блока нет шашки соперника."
+        )
 
 
 def clone_board(board: Board) -> Board:
@@ -317,6 +330,49 @@ def arrange_extra_head_move_test(game: Game, user: Any) -> None:
         player=user,
         action=GameMove.Action.ROLL,
         dice=game.dice,
+        board=game.board,
+    )
+
+
+def arrange_blocking_event_test(game: Game, user: Any) -> None:
+    """Prepare a turn that cannot be finished until the user breaks a block."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Тест блока можно подготовить только в активной игре.")
+
+    color = game.color_for(user)
+    if not color:
+        raise GameError("Вы не участвуете в этой игре.")
+
+    opponent = opponent_color(color)
+    path = PATHS[color]
+    game.moves.all().delete()
+    game.board = [None for _ in range(24)]
+    for point in path[:6]:
+        game.board[point] = {"color": color, "count": 1}
+    game.board[path[10]] = {"color": color, "count": 9}
+    game.borne_off = {color: 0, opponent: 15}
+    game.current_player = user
+    game.dice = [1]
+    game.remaining_moves = []
+    game.has_rolled = True
+    game.head_moves_this_turn = 0
+    game.started_at = timezone.now()
+    game.save()
+    GameMove.objects.create(
+        game=game,
+        player=user,
+        action=GameMove.Action.ROLL,
+        dice=game.dice,
+        board=game.board,
+    )
+    GameMove.objects.create(
+        game=game,
+        player=user,
+        action=GameMove.Action.MOVE,
+        dice=game.dice,
+        source_point=path[4],
+        target_point=path[5],
+        distance=1,
         board=game.board,
     )
 
@@ -557,6 +613,13 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     """Serialize a game into the JSON shape consumed by the browser UI."""
     viewer_color = game.color_for(viewer)
     viewer_moves = legal_moves(game, viewer)
+    viewer_blocking_event = (
+        game.status == Game.Status.ACTIVE
+        and game.current_player_id == viewer.id
+        and game.has_rolled
+        and bool(viewer_color)
+        and has_blocking_event(game.board, viewer_color)
+    )
     return {
         "id": game.id,
         "status": game.status,
@@ -582,6 +645,12 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         and bool(game.opponent_for(viewer)),
         "surrender_mars_available": game.status == Game.Status.ACTIVE
         and surrender_mars_available(game, viewer),
+        "blocking_event": viewer_blocking_event,
+        "blocking_event_points": (
+            blocking_event_points(game.board, viewer_color)
+            if viewer_blocking_event
+            else []
+        ),
         "can_roll": game.status == Game.Status.ACTIVE
         and game.current_player_id == viewer.id
         and not game.has_rolled,
@@ -590,6 +659,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
             and game.current_player_id == viewer.id
             and game.has_rolled
             and not viewer_moves
+            and not viewer_blocking_event
         ),
         "can_undo": can_undo_last_move(game, viewer),
         "last_move_marker": last_move_marker(game, viewer),
@@ -834,6 +904,13 @@ def finish_blocked_turn(game: Game, user: Any) -> None:
         raise GameError("Сейчас ход другого игрока.")
     if not game.has_rolled:
         raise GameError("Кубики еще не брошены.")
+    color = game.color_for(user)
+    if not color:
+        raise GameError("Вы не участвуете в этой игре.")
+    if has_blocking_event(game.board, color):
+        raise GameError(
+            "Нельзя завершить ход: разбейте блок из 6 пунктов без шашки соперника впереди."
+        )
     if legal_moves(game, user):
         raise GameError("У вас еще есть допустимые ходы.")
 

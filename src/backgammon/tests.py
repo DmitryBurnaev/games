@@ -9,6 +9,7 @@ from .models import Game, GameMove, PlayerStats
 from .services import (
     GameError,
     apply_move,
+    arrange_blocking_event_test,
     arrange_checkers_for_victory_test,
     arrange_checkers_in_home,
     create_roll,
@@ -265,6 +266,34 @@ class GameRulesTests(TestCase):
 
         with self.assertRaisesMessage(GameError, "до завершения"):
             undo_last_move(game, self.white)
+
+    def test_blocking_event_blocks_turn_finish_until_position_changes(self) -> None:
+        """A six-block without an opponent ahead must be broken before finish."""
+        game = self.active_game()
+        arrange_blocking_event_test(game, self.white)
+        game.refresh_from_db()
+
+        payload = serialize_game(game, self.white)
+        self.assertTrue(payload["blocking_event"])
+        self.assertEqual(payload["blocking_event_points"], [0, 1, 2, 3, 4, 5])
+        self.assertFalse(payload["can_end_turn"])
+        self.assertEqual(payload["legal_moves"], [])
+
+        with self.assertRaisesMessage(GameError, "разбейте блок"):
+            finish_blocked_turn(game, self.white)
+
+        undo_last_move(game, self.white)
+        game.refresh_from_db()
+        apply_move(game, self.white, 10, 1)
+        game.refresh_from_db()
+
+        payload = serialize_game(game, self.white)
+        self.assertFalse(payload["blocking_event"])
+        self.assertTrue(payload["can_end_turn"])
+
+        finish_blocked_turn(game, self.white)
+        game.refresh_from_db()
+        self.assertEqual(game.current_player, self.black)
 
     def test_move_markers_live_until_opponent_rolls(self) -> None:
         """Moved-checker markers transfer to the opponent until their roll."""
@@ -603,10 +632,12 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, "⌛ 1 час 18 мин")
         self.assertNotContains(response, "дубли:")
         self.assertContains(response, "viewer ⇆ opponent")
+        self.assertContains(response, "viewer ⇆ opponent 🌚")
         self.assertContains(response, "победа")
         self.assertContains(response, "text-bg-success")
         self.assertContains(response, "поражение")
         self.assertContains(response, "🌚")
+        self.assertNotContains(response, "поражение 🌚")
         self.assertContains(response, "text-bg-danger")
         self.assertContains(response, "игра в процессе ...")
         self.assertContains(response, "ожидание соперника")
@@ -642,10 +673,12 @@ class GameDebugToolsTests(TestCase):
         self.assertContains(response, "В дом для теста")
         self.assertContains(response, "Тест победы")
         self.assertContains(response, "Тест головы 5/5")
+        self.assertContains(response, "Тест блока 6")
         self.assertContains(response, "👈")
         self.assertContains(response, 'data-debug-tools="1"')
         self.assertContains(response, "data-prepare-bear-off-url")
         self.assertContains(response, "data-prepare-extra-head-move-url")
+        self.assertContains(response, "data-prepare-blocking-event-url")
 
     @override_settings(BACKGAMMON_ANIMATIONS_ENABLED=True)
     def test_animation_flag_renders_when_enabled(self) -> None:
@@ -717,6 +750,25 @@ class GameDebugToolsTests(TestCase):
             ],
         )
 
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_blocking_event_debug_helper_blocks_turn_finish(self) -> None:
+        """The debug endpoint prepares a position blocked by the six-block rule."""
+        response = self.client.post(
+            reverse("backgammon:prepare_blocking_event", kwargs={"pk": self.game.pk})
+        )
+        self.game.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(self.game.dice, [1])
+        self.assertEqual(self.game.remaining_moves, [])
+        self.assertEqual(self.game.current_player, self.white)
+
+        payload = serialize_game(self.game, self.white)
+        self.assertTrue(payload["blocking_event"])
+        self.assertFalse(payload["can_end_turn"])
+        self.assertTrue(payload["can_undo"])
+
     @override_settings(BACKGAMMON_DEBUG_TOOLS=False)
     def test_debug_buttons_and_endpoint_are_disabled_when_setting_is_off(self) -> None:
         """Debug buttons are hidden and helper endpoints reject requests."""
@@ -729,12 +781,18 @@ class GameDebugToolsTests(TestCase):
         extra_head_response = self.client.post(
             reverse("backgammon:prepare_extra_head_move", kwargs={"pk": self.game.pk})
         )
+        blocking_event_response = self.client.post(
+            reverse("backgammon:prepare_blocking_event", kwargs={"pk": self.game.pk})
+        )
 
         self.assertNotContains(detail_response, "В дом для теста")
         self.assertNotContains(detail_response, "Тест победы")
         self.assertNotContains(detail_response, "Тест головы 5/5")
+        self.assertNotContains(detail_response, "Тест блока 6")
         self.assertContains(detail_response, 'data-debug-tools="0"')
         self.assertNotContains(detail_response, "data-prepare-bear-off-url")
         self.assertNotContains(detail_response, "data-prepare-extra-head-move-url")
+        self.assertNotContains(detail_response, "data-prepare-blocking-event-url")
         self.assertEqual(endpoint_response.status_code, 403)
         self.assertEqual(extra_head_response.status_code, 403)
+        self.assertEqual(blocking_event_response.status_code, 403)

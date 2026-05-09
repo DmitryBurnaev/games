@@ -25,14 +25,14 @@
             {% for game in my_games %}
                 <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
                     <span class="d-flex flex-column gap-1">
-                        <span>#{{ game.pk }} · {{ game.white_player.username }} ⇆ {% if game.black_player %}{{ game.black_player.username }}{% else %}ожидание{% endif %}</span>
+                        <span>#{{ game.pk }} · {{ game.white_player.username }} ⇆ {% if game.black_player %}{{ game.black_player.username }}{% else %}ожидание{% endif %}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
                         <span class="text-secondary small">
                             {{ game.started_at_label }} · ⌛ {{ game.duration_label }}
                         </span>
                     </span>
                     {% if game.winner %}
                         <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">
-                            {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}{% if game.victory_type == "mars" %} 🌚{% endif %}
+                            {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}
                         </span>
                     {% elif game.status == "active" %}
                         <span class="badge text-bg-secondary flex-shrink-0">игра в процессе ...</span>

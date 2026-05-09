@@ -13,6 +13,7 @@
     const prepareBearOffUrl = app.dataset.prepareBearOffUrl;
     const prepareVictoryUrl = app.dataset.prepareVictoryUrl;
     const prepareExtraHeadMoveUrl = app.dataset.prepareExtraHeadMoveUrl;
+    const prepareBlockingEventUrl = app.dataset.prepareBlockingEventUrl;
     const debugGameTools = app.dataset.debugTools === '1';
     const moveAnimationsEnabled = app.dataset.animationsEnabled !== '0';
     const configuredPollIntervalMs = parseInt(app.dataset.pollIntervalMs || '1000', 10);
@@ -38,6 +39,11 @@
     const prepareBearOffButton = document.getElementById('prepare-bear-off-button');
     const prepareVictoryButton = document.getElementById('prepare-victory-button');
     const prepareExtraHeadMoveButton = document.getElementById('prepare-extra-head-move-button');
+    const prepareBlockingEventButton = document.getElementById('prepare-blocking-event-button');
+    const waitingForOpponentAlerts = Array.from(document.querySelectorAll('.alert'))
+        .filter((element) => element.textContent.includes('Теперь нужен второй игрок'));
+    const joinedGameAlerts = Array.from(document.querySelectorAll('.alert'))
+        .filter((element) => element.textContent.includes('Вы присоединились к игре'));
     const domovoyPop = document.getElementById('domovoy-pop');
     const domovoyImage = document.getElementById('domovoy-image');
     const whitePlayer = document.getElementById('white-player');
@@ -52,6 +58,7 @@
     let diceAnimating = false;
     let diceAnimationStartedAt = 0;
     let domovoyTimer = null;
+    let joinedGameAlertTimer = null;
     let lastDiceKey = '';
     let lastVictoryKey = '';
     let nextMoveAnimationAt = 0;
@@ -971,6 +978,10 @@
         if (movePanel.hidden) {
             return;
         }
+        if (game.blocking_event && !game.legal_moves.length) {
+            movePanel.innerHTML = '<div class="text-danger small">Нельзя завершить ход: разбейте блок из 6 пунктов без шашки соперника впереди.</div>';
+            return;
+        }
         if (!game.legal_moves.length) {
             movePanel.innerHTML = '<div class="text-secondary small">Нет доступных ходов.</div>';
             return;
@@ -1013,12 +1024,12 @@
         finishedStatsPanel.innerHTML = `
             <div class="finished-stats-title">Статистика игры</div>
             <dl class="small">
+                <dt>⌛ Длительность</dt>
+                <dd>${durationLabel(start, finish)}</dd>
                 <dt>🕰️ Начало</dt>
                 <dd>${moscowDateTimeLabel(start)}</dd>
                 <dt>🏁 Финиш</dt>
                 <dd>${moscowDateTimeLabel(finish)}</dd>
-                <dt>⌛ Длительность</dt>
-                <dd>${durationLabel(start, finish)}</dd>
                 <dt>🎲 Дубли</dt>
                 <dd>${playerName(game.white_player)}: ${whiteDoubles} · ${playerName(game.black_player)}: ${blackDoubles}</dd>
                 <dt>📤 Выведено</dt>
@@ -1053,11 +1064,27 @@
         gameSide.classList.add(isViewerTurn() ? 'turn-mine' : 'turn-waiting');
     }
 
+    function renderPageMessages() {
+        waitingForOpponentAlerts.forEach((element) => {
+            element.classList.toggle('d-none', game.status !== 'waiting');
+        });
+        if (game.status !== 'active' || joinedGameAlertTimer || !joinedGameAlerts.length) {
+            return;
+        }
+        joinedGameAlertTimer = window.setTimeout(() => {
+            joinedGameAlerts.forEach((element) => {
+                element.classList.add('d-none');
+            });
+        }, 2200);
+    }
+
     function render() {
         if (!game) {
             return;
         }
         renderTurnState();
+        renderPageMessages();
+        gameSide.classList.toggle('game-side-short', game.status !== 'finished');
         whitePlayer.textContent = `Белые: ${playerName(game.white_player)}`;
         blackPlayer.textContent = `Черные: ${playerName(game.black_player)}`;
         statusLine.textContent = statusText();
@@ -1082,6 +1109,9 @@
         }
         if (prepareExtraHeadMoveButton) {
             prepareExtraHeadMoveButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
+        }
+        if (prepareBlockingEventButton) {
+            prepareBlockingEventButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
         }
         if (selectedSource !== null && !legalSources().has(selectedSource)) {
             selectedSource = null;
@@ -1199,6 +1229,20 @@
             try {
                 showError('');
                 const nextGame = await requestJson(prepareExtraHeadMoveUrl, { method: 'POST' });
+                selectedSource = null;
+                applyGameState(nextGame, 'own');
+                lastDiceKey = JSON.stringify(game.dice || []);
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+    }
+
+    if (debugGameTools && prepareBlockingEventButton) {
+        prepareBlockingEventButton.addEventListener('click', async () => {
+            try {
+                showError('');
+                const nextGame = await requestJson(prepareBlockingEventUrl, { method: 'POST' });
                 selectedSource = null;
                 applyGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);

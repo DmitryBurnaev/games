@@ -29,6 +29,11 @@ urlpatterns = [
         views.prepare_extra_head_move,
         name="prepare_extra_head_move",
     ),
+    path(
+        "games/<int:pk>/prepare-blocking-event/",
+        views.prepare_blocking_event,
+        name="prepare_blocking_event",
+    ),
     path("games/<int:pk>/undo/", views.undo_move, name="undo_move"),
     path("games/<int:pk>/end-turn/", views.end_turn, name="end_turn"),
 ]

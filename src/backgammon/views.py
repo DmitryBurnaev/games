@@ -22,6 +22,7 @@ from .models import Game, GameMove, PlayerStats
 from .services import (
     GameError,
     apply_move,
+    arrange_blocking_event_test,
     arrange_checkers_for_victory_test,
     arrange_extra_head_move_test,
     arrange_checkers_in_home,
@@ -332,6 +333,23 @@ def prepare_extra_head_move(request: HttpRequest, pk: int) -> JsonResponse:
         with transaction.atomic():
             game = get_participant_game(pk, request.user, for_update=True)
             arrange_extra_head_move_test(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def prepare_blocking_event(request: HttpRequest, pk: int) -> JsonResponse:
+    """Prepare a six-block state that blocks turn finishing."""
+    if not settings.BACKGAMMON_DEBUG_TOOLS:
+        return json_error("Отладочные игровые инструменты выключены.", status=403)
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            arrange_blocking_event_test(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
     except GameError as exc:
