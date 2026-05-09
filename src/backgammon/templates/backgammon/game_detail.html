@@ -20,6 +20,7 @@
     data-prepare-bear-off-url="{% url 'backgammon:prepare_bear_off' game.pk %}"
     data-prepare-victory-url="{% url 'backgammon:prepare_victory' game.pk %}"
     data-prepare-extra-head-move-url="{% url 'backgammon:prepare_extra_head_move' game.pk %}"
+    data-prepare-blocking-event-url="{% url 'backgammon:prepare_blocking_event' game.pk %}"
     {% endif %}
     data-domovoy-one="{% static 'domovoy-1.jpg' %}"
     data-domovoy-two="{% static 'domovoy-2.jpg' %}"
@@ -27,7 +28,7 @@
     {% csrf_token %}
 
     <div class="game-shell">
-        <aside class="game-side">
+        <aside class="game-side{% if game.status != 'finished' %} game-side-short{% endif %}">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
                 <div>
                     <h1 class="h4 mb-1">Игра #{{ game.pk }}</h1>
@@ -70,6 +71,7 @@
                     <button id="prepare-bear-off-button" class="btn btn-outline-info btn-sm" type="button">В дом для теста</button>
                     <button id="prepare-victory-button" class="btn btn-outline-success btn-sm" type="button">Тест победы</button>
                     <button id="prepare-extra-head-move-button" class="btn btn-outline-dark btn-sm" type="button">Тест головы 5/5</button>
+                    <button id="prepare-blocking-event-button" class="btn btn-outline-danger btn-sm" type="button">Тест блока 6</button>
                 {% endif %}
             </div>
 
@@ -93,5 +95,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=42"></script>
+<script src="{% static 'backgammon/game.js' %}?v=47"></script>
 {% endblock %}
