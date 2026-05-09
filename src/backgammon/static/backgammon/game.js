@@ -758,14 +758,22 @@
         }
     }
 
-    function applyGameState(nextGame, defaultAnimationSpeed) {
+    function applyGameState(nextGame, defaultAnimationSpeed, skipUnchangedRender) {
+        const previousGame = game;
+        if (
+            skipUnchangedRender
+            && previousGame
+            && gameStateKey(previousGame) === gameStateKey(nextGame)
+        ) {
+            game = nextGame;
+            return;
+        }
         if (!moveAnimationsEnabled) {
             game = nextGame;
             render();
             seedAnimatedMoveKeys(nextGame);
             return;
         }
-        const previousGame = game;
         const snapshot = previousGame ? captureBoardSnapshot() : null;
         const transitions = previousGame ? newMoveStepTransitions(nextGame) : [];
         game = nextGame;
@@ -808,6 +816,10 @@
                 diceRow.innerHTML = diceHtml(game.dice, false);
             }
         }, 520);
+    }
+
+    function gameStateKey(gameState) {
+        return JSON.stringify(gameState);
     }
 
     function moveMarkers() {
@@ -1125,7 +1137,7 @@
     async function loadState() {
         try {
             const nextGame = await requestJson(stateUrl, { method: 'GET' });
-            applyGameState(nextGame, 'auto');
+            applyGameState(nextGame, 'auto', true);
         } catch (error) {
             showError(error.message);
         }
