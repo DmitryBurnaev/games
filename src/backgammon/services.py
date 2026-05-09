@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import random
+import secrets
 from typing import Any
 
 from django.db.models import F, QuerySet
@@ -26,6 +26,16 @@ HOME_START = 18
 
 class GameError(ValueError):
     """Raised when a requested game action violates the rules."""
+
+
+def roll_die() -> int:
+    """Return one fair die value using the operating system RNG."""
+    return secrets.randbelow(6) + 1
+
+
+def roll_dice() -> list[int]:
+    """Return two independent fair dice values."""
+    return [roll_die(), roll_die()]
 
 
 def opponent_color(color: Game.Color) -> Game.Color:
@@ -694,7 +704,7 @@ def create_roll(game: Game, user: Any) -> list[int]:
     if game.has_rolled:
         raise GameError("Кубики уже брошены.")
 
-    dice = [random.randint(1, 6), random.randint(1, 6)]
+    dice = roll_dice()
     game.dice = dice
     game.remaining_moves = [dice[0]] * 4 if dice[0] == dice[1] else dice[:]
     game.has_rolled = True

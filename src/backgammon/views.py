@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 from datetime import timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -28,6 +27,7 @@ from .services import (
     arrange_checkers_in_home,
     create_roll,
     finish_blocked_turn,
+    roll_die,
     serialize_game,
     surrender_game,
     undo_last_move,
@@ -174,8 +174,8 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
 
         white_die = black_die = 0
         while white_die == black_die:
-            white_die = random.randint(1, 6)
-            black_die = random.randint(1, 6)
+            white_die = roll_die()
+            black_die = roll_die()
         game.black_player = request.user
         game.current_player = (
             game.white_player if white_die > black_die else request.user

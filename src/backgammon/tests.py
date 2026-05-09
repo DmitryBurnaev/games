@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone as datetime_timezone
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -364,6 +365,33 @@ class GameRulesTests(TestCase):
         game.refresh_from_db()
 
         self.assertEqual(game.started_at, first_started_at)
+
+    @patch("backgammon.services.roll_dice", return_value=[6, 6])
+    def test_create_roll_uses_central_dice_generator(self, mocked_roll) -> None:
+        """Roll creation persists dice from the shared server-side generator."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+
+        dice = create_roll(game, self.white)
+        game.refresh_from_db()
+
+        mocked_roll.assert_called_once_with()
+        self.assertEqual(dice, [6, 6])
+        self.assertEqual(game.dice, [6, 6])
+        self.assertEqual(game.remaining_moves, [6, 6, 6, 6])
+        self.assertTrue(game.has_rolled)
+        self.assertTrue(
+            GameMove.objects.filter(
+                game=game,
+                player=self.white,
+                action=GameMove.Action.ROLL,
+                dice=[6, 6],
+            ).exists()
+        )
 
     def test_serialized_game_includes_timestamps_and_double_roll_counts(self) -> None:
         """The detail UI receives final-game stats for rendering."""
