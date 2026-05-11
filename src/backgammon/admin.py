@@ -1,6 +1,28 @@
+from django import forms
 from django.contrib import admin
 
-from .models import Game, GameMove, PlayerStats
+from .models import AppSetting, Game, GameMove, PlayerStats
+
+
+class AppSettingAdminForm(forms.ModelForm):
+    """Admin form with constrained setting keys while keeping DB schema flexible."""
+
+    key = forms.ChoiceField(choices=AppSetting.Key.choices)
+
+    class Meta:
+        model = AppSetting
+        fields = "__all__"
+
+
+@admin.register(AppSetting)
+class AppSettingAdmin(admin.ModelAdmin):
+    """Admin view for runtime settings with environment fallback."""
+
+    form = AppSettingAdminForm
+    list_display = ("key", "value", "is_enabled", "updated_at")
+    list_filter = ("is_enabled", "created_at", "updated_at")
+    search_fields = ("key", "value")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(Game)

@@ -17,6 +17,11 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from .app_settings import (
+    backgammon_animations_enabled,
+    backgammon_debug_tools,
+    backgammon_poll_interval_ms,
+)
 from .models import Game, GameMove, PlayerStats
 from .services import (
     GameError,
@@ -152,9 +157,9 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "backgammon/game_detail.html",
         {
             "game": game,
-            "debug_game_tools": settings.BACKGAMMON_DEBUG_TOOLS,
-            "animations_enabled": settings.BACKGAMMON_ANIMATIONS_ENABLED,
-            "poll_interval_ms": settings.BACKGAMMON_POLL_INTERVAL_MS,
+            "debug_game_tools": backgammon_debug_tools(),
+            "animations_enabled": backgammon_animations_enabled(),
+            "poll_interval_ms": backgammon_poll_interval_ms(),
         },
     )
 
@@ -293,7 +298,7 @@ def surrender(request: HttpRequest, pk: int) -> JsonResponse:
 @require_POST
 def prepare_bear_off(request: HttpRequest, pk: int) -> JsonResponse:
     """Move the current user's checkers into home for finish testing."""
-    if not settings.BACKGAMMON_DEBUG_TOOLS:
+    if not backgammon_debug_tools():
         return json_error("Отладочные игровые инструменты выключены.", status=403)
     try:
         with transaction.atomic():
@@ -310,7 +315,7 @@ def prepare_bear_off(request: HttpRequest, pk: int) -> JsonResponse:
 @require_POST
 def prepare_victory(request: HttpRequest, pk: int) -> JsonResponse:
     """Prepare a near-finished board for testing victory animation."""
-    if not settings.BACKGAMMON_DEBUG_TOOLS:
+    if not backgammon_debug_tools():
         return json_error("Отладочные игровые инструменты выключены.", status=403)
     try:
         with transaction.atomic():
@@ -327,7 +332,7 @@ def prepare_victory(request: HttpRequest, pk: int) -> JsonResponse:
 @require_POST
 def prepare_extra_head_move(request: HttpRequest, pk: int) -> JsonResponse:
     """Prepare a first-turn blocked-head position for testing."""
-    if not settings.BACKGAMMON_DEBUG_TOOLS:
+    if not backgammon_debug_tools():
         return json_error("Отладочные игровые инструменты выключены.", status=403)
     try:
         with transaction.atomic():
@@ -344,7 +349,7 @@ def prepare_extra_head_move(request: HttpRequest, pk: int) -> JsonResponse:
 @require_POST
 def prepare_blocking_event(request: HttpRequest, pk: int) -> JsonResponse:
     """Prepare a six-block state that blocks turn finishing."""
-    if not settings.BACKGAMMON_DEBUG_TOOLS:
+    if not backgammon_debug_tools():
         return json_error("Отладочные игровые инструменты выключены.", status=403)
     try:
         with transaction.atomic():

@@ -3,10 +3,10 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
-from django.conf import settings
 from django.db.models import F, QuerySet
 from django.utils import timezone
 
+from .app_settings import DICE_MODE_PLAYER_BAG, backgammon_dice_mode
 from .models import Board, Game, GameMove, PlayerStats
 
 PlayerPayload = dict[str, Any] | None
@@ -26,8 +26,6 @@ HOME_START = 18
 DICE_PAIR_BAG: tuple[tuple[int, int], ...] = tuple(
     (left, right) for left in range(1, 7) for right in range(1, 7)
 )
-DICE_MODE_INDEPENDENT = "independent"
-DICE_MODE_PLAYER_BAG = "player_bag"
 
 
 class GameError(ValueError):
@@ -67,10 +65,7 @@ def roll_dice_from_player_bag(game: Game, user: Any) -> list[int]:
 
 def roll_dice_for_game(game: Game, user: Any) -> list[int]:
     """Return dice using the configured game dice mode."""
-    if (
-        getattr(settings, "BACKGAMMON_DICE_MODE", DICE_MODE_INDEPENDENT)
-        == DICE_MODE_PLAYER_BAG
-    ):
+    if backgammon_dice_mode() == DICE_MODE_PLAYER_BAG:
         return roll_dice_from_player_bag(game, user)
     return roll_dice()
 

@@ -3,12 +3,48 @@ from __future__ import annotations
 from typing import Any
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
 BoardPoint = dict[str, Any] | None
 Board = list[BoardPoint]
 UserLike = Any
+
+
+class AppSetting(models.Model):
+    """Runtime-editable application setting with environment fallback."""
+
+    class Key(models.TextChoices):
+        BACKGAMMON_DEBUG_TOOLS = "BACKGAMMON_DEBUG_TOOLS", "Backgammon debug tools"
+        BACKGAMMON_DICE_MODE = "BACKGAMMON_DICE_MODE", "Backgammon dice mode"
+        BACKGAMMON_ANIMATIONS_ENABLED = (
+            "BACKGAMMON_ANIMATIONS_ENABLED",
+            "Backgammon animations enabled",
+        )
+        BACKGAMMON_POLL_INTERVAL_MS = (
+            "BACKGAMMON_POLL_INTERVAL_MS",
+            "Backgammon poll interval ms",
+        )
+
+    key = models.CharField(max_length=96, unique=True)
+    value = models.TextField(blank=True)
+    is_enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["key"]
+
+    def __str__(self) -> str:
+        state = "enabled" if self.is_enabled else "fallback"
+        return f"{self.key} ({state})"
+
+    def clean(self) -> None:
+        """Validate keys in Python so new keys do not require schema changes."""
+        super().clean()
+        if self.key not in self.Key.values:
+            raise ValidationError({"key": "Unknown application setting key."})
 
 
 def initial_board() -> Board:

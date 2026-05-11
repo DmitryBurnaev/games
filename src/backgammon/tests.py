@@ -6,7 +6,13 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .models import Game, GameMove, PlayerStats
+from .app_settings import (
+    backgammon_animations_enabled,
+    backgammon_debug_tools,
+    backgammon_dice_mode,
+    backgammon_poll_interval_ms,
+)
+from .models import AppSetting, Game, GameMove, PlayerStats
 from .services import (
     GameError,
     apply_move,
@@ -71,6 +77,67 @@ class UserRegistrationTests(TestCase):
         response = self.client.get(reverse("login"))
 
         self.assertContains(response, "Создать аккаунт")
+
+
+class AppSettingsTests(TestCase):
+    """Coverage for DB-backed app settings with environment fallback."""
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_boolean_setting_falls_back_when_row_is_missing(self) -> None:
+        """Missing DB settings fall back to Django/env-derived settings."""
+        AppSetting.objects.filter(key=AppSetting.Key.BACKGAMMON_DEBUG_TOOLS).delete()
+
+        self.assertTrue(backgammon_debug_tools())
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_boolean_setting_uses_enabled_database_value(self) -> None:
+        """Enabled DB settings override environment-derived fallbacks."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+            defaults={"value": "false", "is_enabled": True},
+        )
+
+        self.assertFalse(backgammon_debug_tools())
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_disabled_setting_uses_fallback_value(self) -> None:
+        """Disabled DB settings leave the environment fallback active."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+            defaults={"value": "false", "is_enabled": False},
+        )
+
+        self.assertTrue(backgammon_debug_tools())
+
+    @override_settings(BACKGAMMON_DICE_MODE="independent")
+    def test_choice_setting_ignores_invalid_database_value(self) -> None:
+        """Invalid DB choices do not replace the fallback setting."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_DICE_MODE,
+            defaults={"value": "strange", "is_enabled": True},
+        )
+
+        self.assertEqual(backgammon_dice_mode(), "independent")
+
+    @override_settings(BACKGAMMON_ANIMATIONS_ENABLED=False)
+    def test_animation_setting_uses_database_value(self) -> None:
+        """Animation settings are available through the DB-backed layer."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_ANIMATIONS_ENABLED,
+            defaults={"value": "true", "is_enabled": True},
+        )
+
+        self.assertTrue(backgammon_animations_enabled())
+
+    @override_settings(BACKGAMMON_POLL_INTERVAL_MS=1000)
+    def test_poll_interval_setting_uses_minimum_value(self) -> None:
+        """Poll interval values are clamped to the existing lower bound."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS,
+            defaults={"value": "50", "is_enabled": True},
+        )
+
+        self.assertEqual(backgammon_poll_interval_ms(), 250)
 
 
 class GameRulesTests(TestCase):
