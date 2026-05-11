@@ -15,6 +15,7 @@ from .services import (
     arrange_checkers_in_home,
     create_roll,
     finish_blocked_turn,
+    roll_dice_from_player_bag,
     serialize_game,
     undo_last_move,
 )
@@ -392,6 +393,83 @@ class GameRulesTests(TestCase):
                 dice=[6, 6],
             ).exists()
         )
+
+    @patch("backgammon.services.secrets.choice")
+    def test_player_bag_dice_mode_uses_remaining_pairs(self, mocked_choice) -> None:
+        """The player-bag dice mode avoids pairs already used in this cycle."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.ROLL,
+            dice=[1, 1],
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.ROLL,
+            dice=[1, 2],
+        )
+
+        def choose_remaining(remaining):
+            self.assertNotIn((1, 1), remaining)
+            self.assertNotIn((1, 2), remaining)
+            return (6, 6)
+
+        mocked_choice.side_effect = choose_remaining
+
+        self.assertEqual(roll_dice_from_player_bag(game, self.white), [6, 6])
+
+    @patch("backgammon.services.secrets.choice")
+    def test_player_bag_dice_mode_resets_after_full_cycle(self, mocked_choice) -> None:
+        """After 36 personal rolls the player's dice bag starts a fresh cycle."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+        for left in range(1, 7):
+            for right in range(1, 7):
+                GameMove.objects.create(
+                    game=game,
+                    player=self.white,
+                    action=GameMove.Action.ROLL,
+                    dice=[left, right],
+                )
+
+        def choose_from_fresh_bag(remaining):
+            self.assertEqual(len(remaining), 36)
+            self.assertIn((1, 1), remaining)
+            return (1, 1)
+
+        mocked_choice.side_effect = choose_from_fresh_bag
+
+        self.assertEqual(roll_dice_from_player_bag(game, self.white), [1, 1])
+
+    @override_settings(BACKGAMMON_DICE_MODE="player_bag")
+    @patch("backgammon.services.roll_dice_from_player_bag", return_value=[3, 3])
+    def test_create_roll_can_use_player_bag_dice_mode(self, mocked_roll) -> None:
+        """Roll creation can use the balanced per-player dice mode."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+
+        dice = create_roll(game, self.white)
+        game.refresh_from_db()
+
+        mocked_roll.assert_called_once_with(game, self.white)
+        self.assertEqual(dice, [3, 3])
+        self.assertEqual(game.dice, [3, 3])
+        self.assertEqual(game.remaining_moves, [3, 3, 3, 3])
 
     def test_serialized_game_includes_timestamps_and_double_roll_counts(self) -> None:
         """The detail UI receives final-game stats for rendering."""

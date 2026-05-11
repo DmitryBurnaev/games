@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+from django.conf import settings
 from django.db.models import F, QuerySet
 from django.utils import timezone
 
@@ -22,6 +23,11 @@ HEADS: dict[Game.Color, int] = {
     Game.Color.BLACK: 12,
 }
 HOME_START = 18
+DICE_PAIR_BAG: tuple[tuple[int, int], ...] = tuple(
+    (left, right) for left in range(1, 7) for right in range(1, 7)
+)
+DICE_MODE_INDEPENDENT = "independent"
+DICE_MODE_PLAYER_BAG = "player_bag"
 
 
 class GameError(ValueError):
@@ -36,6 +42,37 @@ def roll_die() -> int:
 def roll_dice() -> list[int]:
     """Return two independent fair dice values."""
     return [roll_die(), roll_die()]
+
+
+def roll_dice_from_player_bag(game: Game, user: Any) -> list[int]:
+    """Return dice from a per-player bag of all 36 ordered dice pairs."""
+    previous_rolls = list(
+        game.moves.filter(player=user, action=GameMove.Action.ROLL)
+        .order_by("created_at", "pk")
+        .values_list("dice", flat=True)
+    )
+    previous_pairs = [
+        tuple(dice)
+        for dice in previous_rolls
+        if isinstance(dice, list) and len(dice) == 2
+    ]
+    cycle_size = len(previous_pairs) % len(DICE_PAIR_BAG)
+    current_cycle = previous_pairs[-cycle_size:] if cycle_size else []
+    remaining = list(DICE_PAIR_BAG)
+    for pair in current_cycle:
+        if pair in remaining:
+            remaining.remove(pair)
+    return list(secrets.choice(remaining or list(DICE_PAIR_BAG)))
+
+
+def roll_dice_for_game(game: Game, user: Any) -> list[int]:
+    """Return dice using the configured game dice mode."""
+    if (
+        getattr(settings, "BACKGAMMON_DICE_MODE", DICE_MODE_INDEPENDENT)
+        == DICE_MODE_PLAYER_BAG
+    ):
+        return roll_dice_from_player_bag(game, user)
+    return roll_dice()
 
 
 def opponent_color(color: Game.Color) -> Game.Color:
@@ -704,7 +741,7 @@ def create_roll(game: Game, user: Any) -> list[int]:
     if game.has_rolled:
         raise GameError("Кубики уже брошены.")
 
-    dice = roll_dice()
+    dice = roll_dice_for_game(game, user)
     game.dice = dice
     game.remaining_moves = [dice[0]] * 4 if dice[0] == dice[1] else dice[:]
     game.has_rolled = True

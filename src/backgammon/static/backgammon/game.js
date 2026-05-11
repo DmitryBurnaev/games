@@ -57,6 +57,7 @@
     let diceTimer = null;
     let diceAnimating = false;
     let diceAnimationStartedAt = 0;
+    let diceAnimationFrame = 0;
     let domovoyTimer = null;
     let joinedGameAlertTimer = null;
     let lastDiceKey = '';
@@ -223,8 +224,11 @@
         }).join('');
     }
 
-    function randomDice() {
-        return [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+    function rollingDiceFrame() {
+        const left = 1 + (diceAnimationFrame % 6);
+        const right = 1 + ((diceAnimationFrame * 5 + 2) % 6);
+        diceAnimationFrame += 1;
+        return [left, right];
     }
 
     function showDomovoy(persist) {
@@ -274,10 +278,11 @@
     function startDiceAnimation() {
         diceAnimating = true;
         diceAnimationStartedAt = Date.now();
+        diceAnimationFrame = 0;
         window.clearInterval(diceTimer);
-        diceRow.innerHTML = diceHtml(randomDice(), true);
+        diceRow.innerHTML = diceHtml(rollingDiceFrame(), true);
         diceTimer = window.setInterval(() => {
-            diceRow.innerHTML = diceHtml(randomDice(), true);
+            diceRow.innerHTML = diceHtml(rollingDiceFrame(), true);
         }, 85);
     }
 
