@@ -1,17 +1,67 @@
 from django import forms
 from django.contrib import admin
+from django.utils.safestring import mark_safe
 
+from .app_settings import DICE_MODES, FALSE_VALUES, TRUE_VALUES
 from .models import AppSetting, Game, GameMove, PlayerStats
+
+BOOLEAN_SETTING_KEYS = {
+    AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+    AppSetting.Key.BACKGAMMON_ANIMATIONS_ENABLED,
+}
+RAW_SETTING_KEY_CHOICES = [(key, key) for key in AppSetting.Key.values]
+
+APP_SETTING_VALUE_HELP = mark_safe(
+    "Allowed values by key:<br>"
+    "BACKGAMMON_DEBUG_TOOLS: true, false, 1, 0, yes, no, on, off<br>"
+    "BACKGAMMON_DICE_MODE: independent, player_bag<br>"
+    "BACKGAMMON_ANIMATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
+    "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250"
+)
 
 
 class AppSettingAdminForm(forms.ModelForm):
     """Admin form with constrained setting keys while keeping DB schema flexible."""
 
-    key = forms.ChoiceField(choices=AppSetting.Key.choices)
+    key = forms.ChoiceField(choices=RAW_SETTING_KEY_CHOICES)
+    value = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+        help_text=APP_SETTING_VALUE_HELP,
+    )
 
     class Meta:
         model = AppSetting
         fields = "__all__"
+
+    def clean_value(self) -> str:
+        """Validate setting values according to the selected key."""
+        key = self.cleaned_data.get("key")
+        value = self.cleaned_data.get("value", "").strip()
+
+        if key in BOOLEAN_SETTING_KEYS:
+            normalized = value.lower()
+            if normalized not in TRUE_VALUES | FALSE_VALUES:
+                raise forms.ValidationError(
+                    "Use one of: true, false, 1, 0, yes, no, on, off."
+                )
+            return normalized
+
+        if key == AppSetting.Key.BACKGAMMON_DICE_MODE:
+            if value not in DICE_MODES:
+                raise forms.ValidationError("Use one of: independent, player_bag.")
+            return value
+
+        if key == AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS:
+            try:
+                parsed = int(value)
+            except ValueError:
+                raise forms.ValidationError("Use an integer number of milliseconds.")
+            if parsed < 250:
+                raise forms.ValidationError("Use an integer value of 250 or greater.")
+            return str(parsed)
+
+        return value
 
 
 @admin.register(AppSetting)

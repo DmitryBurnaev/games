@@ -3,6 +3,7 @@ from datetime import datetime, timezone as datetime_timezone
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.forms import modelform_factory
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
@@ -12,6 +13,7 @@ from .app_settings import (
     backgammon_dice_mode,
     backgammon_poll_interval_ms,
 )
+from .admin import AppSettingAdminForm
 from .models import AppSetting, Game, GameMove, PlayerStats
 from .services import (
     GameError,
@@ -139,6 +141,73 @@ class AppSettingsTests(TestCase):
 
         self.assertEqual(backgammon_poll_interval_ms(), 250)
 
+    def test_admin_form_shows_raw_setting_keys(self) -> None:
+        """Admin key choices use the exact runtime setting names."""
+        choices = dict(AppSettingAdminForm().fields["key"].choices)
+
+        self.assertEqual(
+            choices[AppSetting.Key.BACKGAMMON_DEBUG_TOOLS],
+            AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+        )
+        self.assertEqual(
+            choices[AppSetting.Key.BACKGAMMON_DICE_MODE],
+            AppSetting.Key.BACKGAMMON_DICE_MODE,
+        )
+
+    def test_admin_form_validates_boolean_values(self) -> None:
+        """Boolean runtime settings reject values outside the accepted aliases."""
+        form = AppSettingAdminForm(
+            data={
+                "key": AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+                "value": "maybe",
+                "is_enabled": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("value", form.errors)
+
+    def test_admin_form_validates_dice_mode_values(self) -> None:
+        """Dice mode runtime settings allow only known generation modes."""
+        form = AppSettingAdminForm(
+            data={
+                "key": AppSetting.Key.BACKGAMMON_DICE_MODE,
+                "value": "weighted",
+                "is_enabled": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("value", form.errors)
+
+    def test_admin_form_validates_poll_interval_values(self) -> None:
+        """Polling interval runtime settings must be valid milliseconds."""
+        form = AppSettingAdminForm(
+            data={
+                "key": AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS,
+                "value": "249",
+                "is_enabled": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("value", form.errors)
+
+    def test_admin_form_accepts_and_normalizes_valid_values(self) -> None:
+        """Valid runtime setting values are cleaned before saving."""
+        setting = AppSetting.objects.get(key=AppSetting.Key.BACKGAMMON_DEBUG_TOOLS)
+        form = AppSettingAdminForm(
+            instance=setting,
+            data={
+                "key": AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+                "value": "YES",
+                "is_enabled": "on",
+            },
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["value"], "yes")
+
 
 class GameRulesTests(TestCase):
     """Regression coverage for long-backgammon game rules and turn flow."""
@@ -160,6 +229,50 @@ class GameRulesTests(TestCase):
             remaining_moves=[1, 2],
             has_rolled=True,
         )
+
+    def test_game_admin_form_accepts_empty_dice_lists(self) -> None:
+        """Admin-style game forms allow the empty-list state before/after a roll."""
+        game = Game.objects.create(white_player=self.white)
+        form_class = modelform_factory(
+            Game,
+            fields=[
+                "white_player",
+                "black_player",
+                "current_player",
+                "winner",
+                "status",
+                "victory_type",
+                "board",
+                "borne_off",
+                "dice",
+                "remaining_moves",
+                "has_rolled",
+                "head_moves_this_turn",
+                "turn_number",
+            ],
+        )
+        form = form_class(
+            instance=game,
+            data={
+                "white_player": str(self.white.pk),
+                "black_player": "",
+                "current_player": "",
+                "winner": "",
+                "status": Game.Status.WAITING,
+                "victory_type": "",
+                "board": json.dumps(game.board),
+                "borne_off": json.dumps(game.borne_off),
+                "dice": "[]",
+                "remaining_moves": "[]",
+                "has_rolled": "",
+                "head_moves_this_turn": "0",
+                "turn_number": "1",
+            },
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["dice"], [])
+        self.assertEqual(form.cleaned_data["remaining_moves"], [])
 
     def test_player_cannot_land_on_opponent_point(self) -> None:
         """A checker cannot move onto a point occupied by the opponent."""

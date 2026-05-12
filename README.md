@@ -95,6 +95,7 @@ Runtime variables are defined in `.env.template`.
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | For HTTPS/domain forms | empty                                   | Comma-separated trusted origins, for example `https://games.example.com`. |
 | `DJANGO_USE_X_FORWARDED_HOST` | No                     | `false`                                 | Whether Django should trust `X-Forwarded-Host`.                           |
 | `BACKGAMMON_DEBUG_TOOLS`      | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                        |
+| `BACKGAMMON_DICE_MODE`        | No                     | `independent`                           | Dice generation mode: `independent` or `player_bag`.                      |
 | `BACKGAMMON_ANIMATIONS_ENABLED` | No                   | `true`                                  | Enables checker movement animations in the board UI.                      |
 | `BACKGAMMON_POLL_INTERVAL_MS` | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
 | `ALLOW_USER_REGISTRATION`     | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.   |
@@ -115,12 +116,47 @@ DJANGO_ALLOWED_HOSTS=games.example.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://games.example.com
 DJANGO_USE_X_FORWARDED_HOST=false
 BACKGAMMON_DEBUG_TOOLS=false
+BACKGAMMON_DICE_MODE=independent
 BACKGAMMON_ANIMATIONS_ENABLED=true
 BACKGAMMON_POLL_INTERVAL_MS=1000
 ALLOW_USER_REGISTRATION=false
 
 SQLITE_PATH=/app/.data/db.sqlite3
 ```
+
+## Runtime Game Settings
+
+Backgammon-specific runtime settings can be managed in Django admin through the
+`AppSetting` model. Environment variables are still the fallback: a database row
+overrides the environment only when its `is_enabled` flag is checked. If the row
+is missing, disabled, or contains an invalid value, the app uses the value from
+the environment-backed Django setting.
+
+The migration creates rows for the current backgammon settings with
+`is_enabled=false`, so a deployment keeps its existing `.env` behavior until an
+admin explicitly enables a row.
+
+Available setting keys:
+
+| Key | Value examples | Effect |
+|-----|----------------|--------|
+| `BACKGAMMON_DEBUG_TOOLS` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Shows or hides development helper buttons and endpoints. |
+| `BACKGAMMON_DICE_MODE` | `independent`, `player_bag` | Selects dice generation mode for player rolls. |
+| `BACKGAMMON_ANIMATIONS_ENABLED` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Enables or disables checker movement animations. |
+| `BACKGAMMON_POLL_INTERVAL_MS` | `250`, `750`, `1000`, `2000` | Browser polling interval in milliseconds; values below `250` are clamped to `250`. |
+
+Dice modes:
+
+- `independent`: each die is rolled independently with OS randomness. This is
+  closest to physical dice and remains the default.
+- `player_bag`: each player gets a per-game virtual bag of all 36 ordered dice
+  pairs, from `[1,1]` through `[6,6]`. A pair is removed from that player's
+  current cycle after it appears; after 36 personal rolls the bag starts again.
+  The next pair is still selected with OS randomness from the remaining pairs,
+  but long swings in double counts are smoothed.
+
+For admin copy/paste, the `value` field help text also lists the allowed values
+for every supported key.
 
 ## GitHub Actions
 
