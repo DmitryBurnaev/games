@@ -5,6 +5,7 @@
     }
 
     const stateUrl = app.dataset.stateUrl;
+    const stateWsUrl = app.dataset.stateWsUrl;
     const rollUrl = app.dataset.rollUrl;
     const moveUrl = app.dataset.moveUrl;
     const surrenderUrl = app.dataset.surrenderUrl;
@@ -73,6 +74,17 @@
         own: 45,
         opponent: 240,
     };
+    const heartbeatIntervalMs = 20000;
+    const heartbeatTimeoutMs = 60000;
+    const reconnectDelaysMs = [1000, 2000, 5000, 10000, 30000];
+    let latestStateUpdatedAt = '';
+    let latestRealtimeMessageAt = 0;
+    let stateSocket = null;
+    let pollTimer = null;
+    let heartbeatTimer = null;
+    let heartbeatWatchdogTimer = null;
+    let reconnectTimer = null;
+    let reconnectAttempt = 0;
     const movementPaths = {
         white: Array.from({ length: 24 }, (_, index) => index),
         black: Array.from({ length: 12 }, (_, offset) => 12 + offset).concat(
@@ -179,6 +191,158 @@
             throw new Error(payload.error || 'Ошибка запроса.');
         }
         return payload.game;
+    }
+
+    function stateVersion(nextGame) {
+        return nextGame && (nextGame.updated_at || nextGame.created_at || '');
+    }
+
+    function shouldIgnoreState(nextGame) {
+        const nextVersion = stateVersion(nextGame);
+        return Boolean(latestStateUpdatedAt && nextVersion && nextVersion < latestStateUpdatedAt);
+    }
+
+    function receiveGameState(nextGame, defaultAnimationSpeed, skipUnchangedRender) {
+        if (shouldIgnoreState(nextGame)) {
+            return;
+        }
+        latestStateUpdatedAt = stateVersion(nextGame) || latestStateUpdatedAt;
+        applyGameState(nextGame, defaultAnimationSpeed, skipUnchangedRender);
+    }
+
+    function stateWebSocketUrl() {
+        if (!stateWsUrl || !('WebSocket' in window)) {
+            return null;
+        }
+        const url = new URL(stateWsUrl, window.location.href);
+        url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        return url.toString();
+    }
+
+    function startPollingFallback() {
+        if (pollTimer) {
+            return;
+        }
+        pollTimer = window.setInterval(loadState, pollIntervalMs);
+    }
+
+    function stopPollingFallback() {
+        if (!pollTimer) {
+            return;
+        }
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+    }
+
+    function clearRealtimeTimers() {
+        if (heartbeatTimer) {
+            window.clearInterval(heartbeatTimer);
+            heartbeatTimer = null;
+        }
+        if (heartbeatWatchdogTimer) {
+            window.clearInterval(heartbeatWatchdogTimer);
+            heartbeatWatchdogTimer = null;
+        }
+    }
+
+    function markRealtimeAlive() {
+        latestRealtimeMessageAt = Date.now();
+        stopPollingFallback();
+    }
+
+    function scheduleRealtimeReconnect() {
+        if (reconnectTimer) {
+            return;
+        }
+        const delay = reconnectDelaysMs[Math.min(reconnectAttempt, reconnectDelaysMs.length - 1)];
+        reconnectAttempt += 1;
+        reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = null;
+            connectStateSocket();
+        }, delay);
+    }
+
+    function startRealtimeHeartbeat(socket) {
+        clearRealtimeTimers();
+        heartbeatTimer = window.setInterval(() => {
+            if (socket.readyState !== WebSocket.OPEN) {
+                startPollingFallback();
+                return;
+            }
+            socket.send(JSON.stringify({ type: 'ping' }));
+        }, heartbeatIntervalMs);
+        heartbeatWatchdogTimer = window.setInterval(() => {
+            if (Date.now() - latestRealtimeMessageAt <= heartbeatTimeoutMs) {
+                return;
+            }
+            startPollingFallback();
+            if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+                socket.close();
+            }
+        }, heartbeatIntervalMs);
+    }
+
+    function connectStateSocket() {
+        const url = stateWebSocketUrl();
+        if (!url) {
+            startPollingFallback();
+            return;
+        }
+        if (
+            stateSocket
+            && (stateSocket.readyState === WebSocket.OPEN
+                || stateSocket.readyState === WebSocket.CONNECTING)
+        ) {
+            return;
+        }
+        const socket = new WebSocket(url);
+        stateSocket = socket;
+        const connectFallbackTimer = window.setTimeout(() => {
+            if (socket.readyState === WebSocket.CONNECTING) {
+                startPollingFallback();
+            }
+        }, 5000);
+
+        socket.addEventListener('open', () => {
+            window.clearTimeout(connectFallbackTimer);
+            reconnectAttempt = 0;
+            latestRealtimeMessageAt = Date.now();
+            startRealtimeHeartbeat(socket);
+            socket.send(JSON.stringify({ type: 'ping' }));
+        });
+
+        socket.addEventListener('message', (event) => {
+            let message = null;
+            try {
+                message = JSON.parse(event.data);
+            } catch (error) {
+                return;
+            }
+            if (message.type === 'pong') {
+                markRealtimeAlive();
+                return;
+            }
+            if (message.type === 'game_state' && message.game) {
+                markRealtimeAlive();
+                receiveGameState(message.game, 'auto', true);
+            }
+        });
+
+        socket.addEventListener('close', () => {
+            window.clearTimeout(connectFallbackTimer);
+            if (stateSocket === socket) {
+                stateSocket = null;
+            }
+            clearRealtimeTimers();
+            startPollingFallback();
+            scheduleRealtimeReconnect();
+        });
+
+        socket.addEventListener('error', () => {
+            window.clearTimeout(connectFallbackTimer);
+            startPollingFallback();
+            socket.close();
+        });
     }
 
     function statusText() {
@@ -909,7 +1073,7 @@
                 body: { source, distance },
             });
             selectedSource = null;
-            applyGameState(nextGame, 'own');
+            receiveGameState(nextGame, 'own');
         } catch (error) {
             showError(error.message);
         }
@@ -1142,7 +1306,7 @@
     async function loadState() {
         try {
             const nextGame = await requestJson(stateUrl, { method: 'GET' });
-            applyGameState(nextGame, 'auto', true);
+            receiveGameState(nextGame, 'auto', true);
         } catch (error) {
             showError(error.message);
         }
@@ -1155,7 +1319,7 @@
             const nextGame = await requestJson(rollUrl, { method: 'POST' });
             await finishDiceAnimation(nextGame.dice);
             selectedSource = null;
-            applyGameState(nextGame, 'auto');
+            receiveGameState(nextGame, 'auto');
             lastDiceKey = JSON.stringify(game.dice || []);
             if (game.dice.length === 2 && game.dice[0] === game.dice[1]) {
                 showDomovoy();
@@ -1171,7 +1335,7 @@
             showError('');
             const nextGame = await requestJson(endTurnUrl, { method: 'POST' });
             selectedSource = null;
-            applyGameState(nextGame, 'auto');
+            receiveGameState(nextGame, 'auto');
         } catch (error) {
             showError(error.message);
         }
@@ -1182,7 +1346,7 @@
             showError('');
             const nextGame = await requestJson(undoUrl, { method: 'POST' });
             selectedSource = null;
-            applyGameState(nextGame, 'own');
+            receiveGameState(nextGame, 'own');
         } catch (error) {
             showError(error.message);
         }
@@ -1207,7 +1371,7 @@
                 body: { victory_type: victoryType },
             });
             selectedSource = null;
-            applyGameState(nextGame, 'auto');
+            receiveGameState(nextGame, 'auto');
         } catch (error) {
             showError(error.message);
         }
@@ -1219,7 +1383,7 @@
                 showError('');
                 const nextGame = await requestJson(prepareBearOffUrl, { method: 'POST' });
                 selectedSource = null;
-                applyGameState(nextGame, 'own');
+                receiveGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);
             } catch (error) {
                 showError(error.message);
@@ -1233,7 +1397,7 @@
                 showError('');
                 const nextGame = await requestJson(prepareVictoryUrl, { method: 'POST' });
                 selectedSource = null;
-                applyGameState(nextGame, 'own');
+                receiveGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);
             } catch (error) {
                 showError(error.message);
@@ -1247,7 +1411,7 @@
                 showError('');
                 const nextGame = await requestJson(prepareExtraHeadMoveUrl, { method: 'POST' });
                 selectedSource = null;
-                applyGameState(nextGame, 'own');
+                receiveGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);
             } catch (error) {
                 showError(error.message);
@@ -1261,7 +1425,7 @@
                 showError('');
                 const nextGame = await requestJson(prepareBlockingEventUrl, { method: 'POST' });
                 selectedSource = null;
-                applyGameState(nextGame, 'own');
+                receiveGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);
             } catch (error) {
                 showError(error.message);
@@ -1270,5 +1434,5 @@
     }
 
     loadState();
-    window.setInterval(loadState, pollIntervalMs);
+    connectStateSocket();
 }());

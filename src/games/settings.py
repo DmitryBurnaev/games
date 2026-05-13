@@ -66,6 +66,7 @@ BACKGAMMON_DICE_MODE = os.environ.get("BACKGAMMON_DICE_MODE", "independent")
 BACKGAMMON_ANIMATIONS_ENABLED = env_bool("BACKGAMMON_ANIMATIONS_ENABLED", True)
 BACKGAMMON_POLL_INTERVAL_MS = env_int("BACKGAMMON_POLL_INTERVAL_MS", 1000, 250)
 ALLOW_USER_REGISTRATION = env_bool("ALLOW_USER_REGISTRATION", False)
+REDIS_URL = os.environ.get("REDIS_URL")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
@@ -76,6 +77,7 @@ USE_X_FORWARDED_HOST = env_bool("DJANGO_USE_X_FORWARDED_HOST", False)
 # Application definition
 
 INSTALLED_APPS = [
+    "channels",
     "backgammon",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -117,6 +119,20 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "games.wsgi.application"
 ASGI_APPLICATION = "games.asgi.application"
+
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
 
 
 # Database

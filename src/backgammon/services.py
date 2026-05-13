@@ -673,6 +673,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "viewer_color": viewer_color,
         "viewer_color_name": color_name(viewer_color) if viewer_color else None,
         "created_at": datetime_payload(game.created_at),
+        "updated_at": datetime_payload(game.updated_at),
         "started_at": datetime_payload(game.started_at),
         "finished_at": datetime_payload(game.finished_at),
         "double_rolls": double_rolls_by_color(game),

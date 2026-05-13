@@ -58,6 +58,41 @@ The host directory `.data` is mounted into the container as `/app/.data`.
 On Linux hosts this directory must be writable by UID/GID `1010`, the non-root user
 used by the container.
 
+## Realtime Game State
+
+Active game boards use WebSockets for realtime state updates. Player actions
+still go through the existing HTTP POST endpoints, so the game rules remain
+centralized in the Django views and services. After a successful action commits,
+the backend publishes a lightweight update event to the game WebSocket group.
+Each connected browser then serializes and receives state for its own viewer,
+which matters because controls and legal moves are player-specific.
+
+The browser opens a WebSocket connection to:
+
+```text
+/ws/games/<game_id>/
+```
+
+The HTTP state endpoint remains available:
+
+```text
+/games/<game_id>/state/
+```
+
+The frontend uses that endpoint for initial sync and as a fallback. It sends
+periodic WebSocket heartbeat pings and treats either `pong` or `game_state`
+messages as proof that the realtime channel is healthy. If the socket cannot
+connect, closes, or stops receiving messages for the heartbeat timeout, the
+browser automatically starts legacy polling with `BACKGAMMON_POLL_INTERVAL_MS`.
+Reconnect attempts continue with bounded backoff; once WebSocket traffic is
+healthy again, fallback polling stops.
+
+Realtime delivery depends on Redis through Django Channels in Docker and
+production. Local Docker and production Compose start a `redis` service by
+default, and the app reads `REDIS_URL` for the channel layer. Local non-Docker
+runs can omit `REDIS_URL`; Django then uses an in-memory channel layer suitable
+for a single development process.
+
 ## Make Commands
 
 ```bash
@@ -84,24 +119,26 @@ make lint-in-docker  # run lint checks in Docker
 
 Runtime variables are defined in `.env.template`.
 
-| Variable                      | Required               | Default                                 | Description                                                               |
-|-------------------------------|------------------------|-----------------------------------------|---------------------------------------------------------------------------|
-| `DOCKER_IMAGE`                | Docker/prod            | `games:latest`                          | Image used by Compose. In production this is written to `.version` by CI. |
-| `APP_HOST`                    | No                     | `localhost`                             | Informational host value for local/server scripts.                        |
-| `APP_PORT`                    | Yes for Docker/prod    | `8000`                                  | Port exposed by uvicorn and bound on `127.0.0.1`.                         |
-| `DJANGO_DEBUG`                | No                     | `false` in template, `true` without env | Enables Django debug mode. Keep `false` in production.                    |
-| `DJANGO_SECRET_KEY`           | Yes for Docker/prod    | none                                    | Django secret key. Generate a strong unique value for production.         |
-| `DJANGO_ALLOWED_HOSTS`        | Yes for Docker/prod    | `localhost,127.0.0.1`                   | Comma-separated Django allowed hosts.                                     |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | For HTTPS/domain forms | empty                                   | Comma-separated trusted origins, for example `https://games.example.com`. |
-| `DJANGO_USE_X_FORWARDED_HOST` | No                     | `false`                                 | Whether Django should trust `X-Forwarded-Host`.                           |
-| `BACKGAMMON_DEBUG_TOOLS`      | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                        |
-| `BACKGAMMON_DICE_MODE`        | No                     | `independent`                           | Dice generation mode: `independent` or `player_bag`.                      |
-| `BACKGAMMON_ANIMATIONS_ENABLED` | No                   | `true`                                  | Enables checker movement animations in the board UI.                      |
-| `BACKGAMMON_POLL_INTERVAL_MS` | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
-| `ALLOW_USER_REGISTRATION`     | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.   |
-| `SQLITE_PATH`                 | Yes for Docker/prod    | `/app/.data/db.sqlite3` in template     | SQLite database path inside the container.                                |
+| Variable                        | Required               | Default                                 | Description                                                                 |
+|---------------------------------|------------------------|-----------------------------------------|-----------------------------------------------------------------------------|
+| `DOCKER_IMAGE`                  | Docker/prod            | `games:latest`                          | Image used by Compose. In production this is written to `.version` by CI.   |
+| `APP_HOST`                      | No                     | `localhost`                             | Informational host value for local/server scripts.                          |
+| `APP_PORT`                      | Yes for Docker/prod    | `8000`                                  | Port exposed by uvicorn and bound on `127.0.0.1`.                           |
+| `DJANGO_DEBUG`                  | No                     | `false` in template, `true` without env | Enables Django debug mode. Keep `false` in production.                      |
+| `DJANGO_SECRET_KEY`             | Yes for Docker/prod    | none                                    | Django secret key. Generate a strong unique value for production.           |
+| `DJANGO_ALLOWED_HOSTS`          | Yes for Docker/prod    | `localhost,127.0.0.1`                   | Comma-separated Django allowed hosts.                                       |
+| `DJANGO_CSRF_TRUSTED_ORIGINS`   | For HTTPS/domain forms | empty                                   | Comma-separated trusted origins, for example `https://games.example.com`.   |
+| `DJANGO_USE_X_FORWARDED_HOST`   | No                     | `false`                                 | Whether Django should trust `X-Forwarded-Host`.                             |
+| `REDIS_URL`                     | Yes for WS/prod        | `redis://redis:6379/0` in Docker        | Redis URL used by Django Channels for WebSocket game state fan-out.         |
+| `BACKGAMMON_DEBUG_TOOLS`        | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                          |
+| `BACKGAMMON_DICE_MODE`          | No                     | `independent`                           | Dice generation mode: `independent` or `player_bag`.                        |
+| `BACKGAMMON_ANIMATIONS_ENABLED` | No                     | `true`                                  | Enables checker movement animations in the board UI.                        |
+| `BACKGAMMON_POLL_INTERVAL_MS`   | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
+| `ALLOW_USER_REGISTRATION`       | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.     |
+| `SQLITE_PATH`                   | Yes for Docker/prod    | `/app/.data/db.sqlite3` in template     | SQLite database path inside the container.                                  |
 
-Local non-Docker runs can omit `.env`; settings default to `.data/db.sqlite3`.
+Local non-Docker runs can omit `.env`; settings default to `.data/db.sqlite3`
+and an in-memory WebSocket channel layer.
 
 Example production-ish `.env`:
 
@@ -115,6 +152,7 @@ DJANGO_SECRET_KEY=replace-with-a-strong-secret
 DJANGO_ALLOWED_HOSTS=games.example.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://games.example.com
 DJANGO_USE_X_FORWARDED_HOST=false
+REDIS_URL=redis://redis:6379/0
 BACKGAMMON_DEBUG_TOOLS=false
 BACKGAMMON_DICE_MODE=independent
 BACKGAMMON_ANIMATIONS_ENABLED=true
@@ -138,12 +176,12 @@ admin explicitly enables a row.
 
 Available setting keys:
 
-| Key | Value examples | Effect |
-|-----|----------------|--------|
-| `BACKGAMMON_DEBUG_TOOLS` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Shows or hides development helper buttons and endpoints. |
-| `BACKGAMMON_DICE_MODE` | `independent`, `player_bag` | Selects dice generation mode for player rolls. |
-| `BACKGAMMON_ANIMATIONS_ENABLED` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Enables or disables checker movement animations. |
-| `BACKGAMMON_POLL_INTERVAL_MS` | `250`, `750`, `1000`, `2000` | Browser polling interval in milliseconds; values below `250` are clamped to `250`. |
+| Key                             | Value examples                                      | Effect                                                                             |
+|---------------------------------|-----------------------------------------------------|------------------------------------------------------------------------------------|
+| `BACKGAMMON_DEBUG_TOOLS`        | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Shows or hides development helper buttons and endpoints.                           |
+| `BACKGAMMON_DICE_MODE`          | `independent`, `player_bag`                         | Selects dice generation mode for player rolls.                                     |
+| `BACKGAMMON_ANIMATIONS_ENABLED` | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Enables or disables checker movement animations.                                   |
+| `BACKGAMMON_POLL_INTERVAL_MS`   | `250`, `750`, `1000`, `2000`                        | Browser polling interval in milliseconds; values below `250` are clamped to `250`. |
 
 Dice modes:
 

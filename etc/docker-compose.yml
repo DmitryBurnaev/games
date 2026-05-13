@@ -7,7 +7,14 @@ services:
     environment:
       APP_SERVICE: app
       SQLITE_PATH: /app/.data/db.sqlite3
+      REDIS_URL: redis://redis:6379/0
     ports:
       - 127.0.0.1:${APP_PORT}:${APP_PORT}
     volumes:
       - ${PWD}/.data:/app/.data
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: games-redis

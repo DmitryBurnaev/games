@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14.2"
 dependencies = [
+    "channels>=4.3.2",
+    "channels-redis>=4.3.0",
     "django>=6.0.4",
     "uvicorn[standard]>=0.38.0",
     "whitenoise>=6.11.0",
@@ -13,6 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "black>=26.3.1",
+    "daphne>=4.2.1",
 ]
 
 [tool.black]
