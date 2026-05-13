@@ -2,9 +2,14 @@ import json
 from datetime import datetime, timezone as datetime_timezone
 from unittest.mock import patch
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+from channels.routing import URLRouter
+from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.forms import modelform_factory
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from .app_settings import (
@@ -15,6 +20,8 @@ from .app_settings import (
 )
 from .admin import AppSettingAdminForm
 from .models import AppSetting, Game, GameMove, PlayerStats
+from .realtime import game_group_name
+from .routing import websocket_urlpatterns
 from .services import (
     GameError,
     apply_move,
@@ -207,6 +214,153 @@ class AppSettingsTests(TestCase):
 
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data["value"], "yes")
+
+
+@override_settings(
+    CHANNEL_LAYERS={
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
+)
+class GameStateWebSocketTests(TransactionTestCase):
+    """Coverage for realtime game state delivery."""
+
+    def setUp(self) -> None:
+        """Create users and one active game for WebSocket tests."""
+        User = get_user_model()
+        self.white = User.objects.create_user(username="white", password="pass")
+        self.black = User.objects.create_user(username="black", password="pass")
+        self.other = User.objects.create_user(username="other", password="pass")
+        self.game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+        self.application = URLRouter(websocket_urlpatterns)
+
+    def communicator(
+        self, user: object, game: Game | None = None
+    ) -> WebsocketCommunicator:
+        """Build a communicator with a pre-authenticated scope user."""
+        game = game or self.game
+        communicator = WebsocketCommunicator(
+            self.application,
+            f"/ws/games/{game.pk}/",
+        )
+        communicator.scope["user"] = user
+        return communicator
+
+    def test_participant_receives_initial_viewer_specific_state(self) -> None:
+        """A seated player receives the current game state immediately."""
+        async_to_sync(self.check_participant_receives_initial_viewer_specific_state)()
+
+    async def check_participant_receives_initial_viewer_specific_state(self) -> None:
+        """Connect as a participant and assert the initial state payload."""
+        communicator = self.communicator(self.white)
+        connected, _ = await communicator.connect()
+
+        self.assertTrue(connected)
+        message = await communicator.receive_json_from(timeout=5)
+        self.assertEqual(message["type"], "game_state")
+        self.assertEqual(message["game"]["id"], self.game.pk)
+        self.assertEqual(message["game"]["viewer_color"], Game.Color.WHITE)
+        self.assertIn("updated_at", message["game"])
+
+        await communicator.disconnect()
+
+    def test_rejects_anonymous_user(self) -> None:
+        """Anonymous users cannot subscribe to a private board."""
+        async_to_sync(self.check_rejects_anonymous_user)()
+
+    async def check_rejects_anonymous_user(self) -> None:
+        """Connect without authentication and assert the socket is rejected."""
+        communicator = self.communicator(AnonymousUser())
+        connected, _ = await communicator.connect()
+
+        self.assertFalse(connected)
+
+    def test_rejects_non_participant_for_active_game(self) -> None:
+        """Active games are visible only to seated players."""
+        async_to_sync(self.check_rejects_non_participant_for_active_game)()
+
+    async def check_rejects_non_participant_for_active_game(self) -> None:
+        """Connect as an unrelated user and assert the socket is rejected."""
+        communicator = self.communicator(self.other)
+        connected, _ = await communicator.connect()
+
+        self.assertFalse(connected)
+
+    def test_heartbeat_ping_receives_pong(self) -> None:
+        """The browser heartbeat gets an application-level pong."""
+        async_to_sync(self.check_heartbeat_ping_receives_pong)()
+
+    async def check_heartbeat_ping_receives_pong(self) -> None:
+        """Send a heartbeat ping and assert the consumer replies with pong."""
+        communicator = self.communicator(self.black)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        await communicator.receive_json_from(timeout=5)
+
+        await communicator.send_json_to({"type": "ping"})
+        message = await communicator.receive_json_from(timeout=5)
+
+        self.assertEqual(message, {"type": "pong"})
+        await communicator.disconnect()
+
+    def test_group_update_pushes_fresh_state(self) -> None:
+        """A game update event asks the consumer to send fresh state."""
+        async_to_sync(self.check_group_update_pushes_fresh_state)()
+
+    async def check_group_update_pushes_fresh_state(self) -> None:
+        """Publish a group update and assert a fresh game state is sent."""
+        communicator = self.communicator(self.white)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        await communicator.receive_json_from(timeout=5)
+
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            game_group_name(self.game.pk),
+            {"type": "game.updated"},
+        )
+        message = await communicator.receive_json_from(timeout=5)
+
+        self.assertEqual(message["type"], "game_state")
+        self.assertEqual(message["game"]["id"], self.game.pk)
+        await communicator.disconnect()
+
+    def test_waiting_spectator_closes_after_game_becomes_private(self) -> None:
+        """A waiting-game spectator stops receiving state once play starts."""
+        async_to_sync(self.check_waiting_spectator_closes_after_game_becomes_private)()
+
+    async def check_waiting_spectator_closes_after_game_becomes_private(self) -> None:
+        """Assert a waiting-game spectator is closed after the game starts."""
+        waiting_game = await Game.objects.acreate(
+            white_player=self.white,
+            status=Game.Status.WAITING,
+        )
+        communicator = self.communicator(self.other, waiting_game)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+        initial = await communicator.receive_json_from(timeout=5)
+        self.assertIsNone(initial["game"]["viewer_color"])
+
+        waiting_game.black_player = self.black
+        waiting_game.current_player = self.white
+        waiting_game.status = Game.Status.ACTIVE
+        await waiting_game.asave(
+            update_fields=["black_player", "current_player", "status", "updated_at"]
+        )
+        channel_layer = get_channel_layer()
+        await channel_layer.group_send(
+            game_group_name(waiting_game.pk),
+            {"type": "game.updated"},
+        )
+        message = await communicator.receive_output(timeout=5)
+
+        self.assertEqual(message["type"], "websocket.close")
 
 
 class GameRulesTests(TestCase):
@@ -992,6 +1146,14 @@ class GameDebugToolsTests(TestCase):
         )
 
         self.assertContains(response, 'data-poll-interval-ms="750"')
+
+    def test_websocket_url_renders_for_frontend(self) -> None:
+        """The frontend receives the game WebSocket path."""
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(response, f'data-state-ws-url="/ws/games/{self.game.pk}/"')
 
     def test_finished_game_hides_control_buttons_initially(self) -> None:
         """Finished game pages render controls hidden before frontend state loads."""

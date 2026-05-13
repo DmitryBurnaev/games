@@ -7,6 +7,7 @@
 <div
     id="game-app"
     data-state-url="{% url 'backgammon:game_state' game.pk %}"
+    data-state-ws-url="/ws/games/{{ game.pk }}/"
     data-roll-url="{% url 'backgammon:roll' game.pk %}"
     data-move-url="{% url 'backgammon:move' game.pk %}"
     data-surrender-url="{% url 'backgammon:surrender' game.pk %}"
@@ -95,5 +96,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=49"></script>
+<script src="{% static 'backgammon/game.js' %}?v=50"></script>
 {% endblock %}

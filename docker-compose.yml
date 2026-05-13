@@ -12,8 +12,11 @@ services:
     environment:
       APP_SERVICE: app
       SQLITE_PATH: /app/.data/db.sqlite3
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ${PWD}/.data:/app/.data
+    depends_on:
+      - redis
 
   test:
     container_name: games-test
@@ -28,8 +31,11 @@ services:
     environment:
       APP_SERVICE: test
       SQLITE_PATH: /app/.data/test.sqlite3
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ${PWD}/.data:/app/.data
+    depends_on:
+      - redis
 
   lint:
     container_name: games-lint
@@ -46,3 +52,7 @@ services:
       SQLITE_PATH: /app/.data/lint.sqlite3
     volumes:
       - ${PWD}/.data:/app/.data
+
+  redis:
+    container_name: games-redis
+    image: redis:7-alpine

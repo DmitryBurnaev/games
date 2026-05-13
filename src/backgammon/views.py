@@ -23,6 +23,7 @@ from .app_settings import (
     backgammon_poll_interval_ms,
 )
 from .models import Game, GameMove, PlayerStats
+from .realtime import notify_game_updated
 from .services import (
     GameError,
     apply_move,
@@ -196,6 +197,7 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
             dice=[white_die, black_die],
             board=game.board,
         )
+        queue_game_update(game.pk)
 
     messages.success(request, "Вы присоединились к игре.")
     return redirect("backgammon:game_detail", pk=game.pk)
@@ -214,6 +216,11 @@ def get_json_body(request: HttpRequest) -> dict[str, Any]:
         return json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
         raise GameError("Некорректный JSON.")
+
+
+def queue_game_update(game_id: int) -> None:
+    """Publish a realtime update only after the current transaction commits."""
+    transaction.on_commit(lambda: notify_game_updated(game_id))
 
 
 def get_participant_game(pk: int, user: Any, for_update: bool = False) -> Game:
@@ -253,6 +260,7 @@ def roll(request: HttpRequest, pk: int) -> JsonResponse:
             create_roll(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -271,6 +279,7 @@ def move(request: HttpRequest, pk: int) -> JsonResponse:
             apply_move(game, request.user, source_point, distance)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except TypeError, ValueError:
         return json_error("Некорректные параметры хода.")
     except GameError as exc:
@@ -289,6 +298,7 @@ def surrender(request: HttpRequest, pk: int) -> JsonResponse:
             surrender_game(game, request.user, data.get("victory_type"))
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -306,6 +316,7 @@ def prepare_bear_off(request: HttpRequest, pk: int) -> JsonResponse:
             arrange_checkers_in_home(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -323,6 +334,7 @@ def prepare_victory(request: HttpRequest, pk: int) -> JsonResponse:
             arrange_checkers_for_victory_test(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -340,6 +352,7 @@ def prepare_extra_head_move(request: HttpRequest, pk: int) -> JsonResponse:
             arrange_extra_head_move_test(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -357,6 +370,7 @@ def prepare_blocking_event(request: HttpRequest, pk: int) -> JsonResponse:
             arrange_blocking_event_test(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -372,6 +386,7 @@ def undo_move(request: HttpRequest, pk: int) -> JsonResponse:
             undo_last_move(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})
@@ -387,6 +402,7 @@ def end_turn(request: HttpRequest, pk: int) -> JsonResponse:
             finish_blocked_turn(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
     except GameError as exc:
         return json_error(str(exc))
     return JsonResponse({"ok": True, "game": payload})

@@ -61,11 +61,14 @@ Required production values:
 - `DJANGO_CSRF_TRUSTED_ORIGINS` when HTTPS/domain CSRF protection needs it
 - `APP_PORT`
 - `SQLITE_PATH`, normally `/app/.data/db.sqlite3`
+- `REDIS_URL`, normally `redis://redis:6379/0` for the bundled Compose Redis
 
 The SQLite database is stored on the host at `${TARGET_DIR}/.data/db.sqlite3`
 through the Docker bind mount `${TARGET_DIR}/.data:/app/.data`.
 The app container runs as UID/GID `1010`, so `${TARGET_DIR}/.data` must be writable
 by that ID. The commands above create the directory under the matching service user.
+Realtime game boards use WebSockets through Django Channels, and the production
+Compose file starts Redis for cross-process game state fan-out.
 
 Create the systemd service:
 
@@ -146,7 +149,8 @@ through Nginx.
 
 ## Nginx
 
-Copy `nginx.conf` to your Nginx site config and edit the domain and port:
+Copy `nginx.conf` to your Nginx site config and edit the domain and port. The
+template includes a `/ws/` location for WebSocket upgrade proxying:
 
 ```shell
 export TARGET_DIR="/opt/games"
