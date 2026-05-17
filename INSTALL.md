@@ -150,7 +150,10 @@ through Nginx.
 ## Nginx
 
 Copy `nginx.conf` to your Nginx site config and edit the domain and port. The
-template includes a `/ws/` location for WebSocket upgrade proxying:
+template includes a `/ws/` location for WebSocket upgrade proxying. Keep the
+`Host` and `X-Forwarded-Proto` headers in that location; HTTPS pages use `wss://`
+automatically, and Django validates the public origin against
+`DJANGO_ALLOWED_HOSTS`.
 
 ```shell
 export TARGET_DIR="/opt/games"

@@ -87,6 +87,11 @@ browser automatically starts legacy polling with `BACKGAMMON_POLL_INTERVAL_MS`.
 Reconnect attempts continue with bounded backoff; once WebSocket traffic is
 healthy again, fallback polling stops.
 
+On HTTPS pages the frontend automatically upgrades the relative WebSocket path
+to `wss://`. Nginx must proxy `/ws/` with HTTP/1.1 upgrade headers and preserve
+the original `Host` and `X-Forwarded-Proto` headers so Django validates the same
+public origin that served the page.
+
 Realtime delivery depends on Redis through Django Channels in Docker and
 production. Local Docker and production Compose start a `redis` service by
 default, and the app reads `REDIS_URL` for the channel layer. Local non-Docker
