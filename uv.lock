@@ -286,6 +286,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "channels" },
     { name = "channels-redis" },
+    { name = "daphne" },
     { name = "django" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "whitenoise" },
@@ -294,23 +295,20 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
-    { name = "daphne" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "channels", specifier = ">=4.3.2" },
     { name = "channels-redis", specifier = ">=4.3.0" },
+    { name = "daphne", specifier = ">=4.2.1" },
     { name = "django", specifier = ">=6.0.4" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.38.0" },
     { name = "whitenoise", specifier = ">=6.11.0" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "black", specifier = ">=26.3.1" },
-    { name = "daphne", specifier = ">=4.2.1" },
-]
+dev = [{ name = "black", specifier = ">=26.3.1" }]
 
 [[package]]
 name = "h11"
