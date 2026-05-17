@@ -91,7 +91,9 @@ Realtime delivery depends on Redis through Django Channels in Docker and
 production. Local Docker and production Compose start a `redis` service by
 default, and the app reads `REDIS_URL` for the channel layer. Local non-Docker
 runs can omit `REDIS_URL`; Django then uses an in-memory channel layer suitable
-for a single development process.
+for a single development process. The project includes Daphne so
+`manage.py runserver` serves the ASGI app and accepts WebSocket connections in
+development.
 
 ## Make Commands
 

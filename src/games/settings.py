@@ -77,6 +77,7 @@ USE_X_FORWARDED_HOST = env_bool("DJANGO_USE_X_FORWARDED_HOST", False)
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "channels",
     "backgammon",
     "django.contrib.admin",
