@@ -205,5 +205,5 @@ jobs:
             echo "Deploying ${CI_DOCKER_IMAGE_TAG} ('${CI_DOCKER_IMAGE_NAME}')..."
             cd ${{ secrets.PROD_PROJECT_ROOT }}
             echo "DOCKER_IMAGE=${CI_DOCKER_IMAGE_NAME}" > .version
-            echo "CI_DOCKER_IMAGE_TAG=${CI_DOCKER_IMAGE_TAG}" >> .version
+            echo "APP_VERSION=${CI_DOCKER_IMAGE_TAG}" >> .version
             sh bin/deploy

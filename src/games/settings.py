@@ -66,9 +66,7 @@ BACKGAMMON_DICE_MODE = os.environ.get("BACKGAMMON_DICE_MODE", "independent")
 BACKGAMMON_ANIMATIONS_ENABLED = env_bool("BACKGAMMON_ANIMATIONS_ENABLED", True)
 BACKGAMMON_POLL_INTERVAL_MS = env_int("BACKGAMMON_POLL_INTERVAL_MS", 1000, 250)
 ALLOW_USER_REGISTRATION = env_bool("ALLOW_USER_REGISTRATION", False)
-APP_VERSION = (
-    os.environ.get("APP_VERSION") or os.environ.get("CI_DOCKER_IMAGE_TAG") or "develop"
-).strip()
+APP_VERSION = os.environ.get("APP_VERSION", "develop").strip() or "develop"
 REDIS_URL = os.environ.get("REDIS_URL")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", ["localhost", "127.0.0.1", "[::1]"])
