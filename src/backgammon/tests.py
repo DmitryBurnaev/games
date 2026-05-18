@@ -87,6 +87,20 @@ class UserRegistrationTests(TestCase):
 
         self.assertContains(response, "Создать аккаунт")
 
+    @override_settings(APP_VERSION="1.2.3")
+    def test_base_template_shows_configured_app_version(self) -> None:
+        """The global UI shows the application version when configured."""
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, "Версия 1.2.3")
+
+    @override_settings(APP_VERSION="develop")
+    def test_base_template_shows_default_develop_version(self) -> None:
+        """The global UI shows the development version fallback."""
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, "Версия develop")
+
 
 class AppSettingsTests(TestCase):
     """Coverage for DB-backed app settings with environment fallback."""
