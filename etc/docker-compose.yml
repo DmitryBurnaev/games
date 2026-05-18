@@ -6,6 +6,7 @@ services:
       - .env
     environment:
       APP_SERVICE: app
+      CI_DOCKER_IMAGE_TAG: ${CI_DOCKER_IMAGE_TAG:-}
       SQLITE_PATH: /app/.data/db.sqlite3
       REDIS_URL: redis://redis:6379/0
     ports:
