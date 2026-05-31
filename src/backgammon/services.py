@@ -89,7 +89,11 @@ def player_payload(user: Any) -> PlayerPayload:
     """Serialize a user for JSON responses without exposing extra fields."""
     if not user:
         return None
-    return {"id": user.id, "username": user.username}
+    return {
+        "id": user.id,
+        "username": user.username,
+        "display_name": user.get_full_name() or user.username,
+    }
 
 
 def datetime_payload(value: Any) -> str | None:

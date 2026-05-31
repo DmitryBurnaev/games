@@ -176,6 +176,13 @@ body {
     line-height: 1;
 }
 
+.game-duration-line {
+    position: absolute;
+    bottom: 1rem;
+    left: 1rem;
+    line-height: 36px;
+}
+
 .surrender-button {
     position: absolute;
     right: 1rem;
@@ -604,6 +611,12 @@ body {
 @media (max-width: 900px) {
     .game-shell {
         grid-template-columns: 1fr;
+    }
+
+    .game-side.game-side-short {
+        height: auto;
+        min-height: 0;
+        padding-bottom: 4.25rem;
     }
 
     .board {
