@@ -26,6 +26,8 @@
     const boardEl = document.getElementById('board');
     const gameSide = document.querySelector('.game-side');
     const statusLine = document.getElementById('status-line');
+    const gameDurationLine = document.getElementById('game-duration-line');
+    const gameDuration = document.getElementById('game-duration');
     const errorLine = document.getElementById('error-line');
     const dicePanel = document.getElementById('dice-panel');
     const diceRow = document.getElementById('dice-row');
@@ -97,7 +99,7 @@
     };
 
     function playerName(player) {
-        return player ? player.username : 'ожидание';
+        return player ? player.display_name || player.username : 'ожидание';
     }
 
     function showError(message) {
@@ -154,6 +156,12 @@
             parts.push(`${minutes} мин`);
         }
         return parts.join(' ');
+    }
+
+    function renderCurrentGameDuration() {
+        const isActive = game && game.status === 'active';
+        gameDurationLine.classList.toggle('d-none', !isActive);
+        gameDuration.textContent = isActive ? durationLabel(game.started_at, new Date()) : '—';
     }
 
     function diceValueLabel(value) {
@@ -360,7 +368,7 @@
             if (isViewerTurn()) {
                 return 'Ваш ход!';
             }
-            return `🤔 жду хода ${game.current_player.username}`;
+            return `🤔 жду хода ${playerName(game.current_player)}`;
         }
         return 'Игра активна';
     }
@@ -1205,7 +1213,7 @@
         finishedStatsPanel.innerHTML = `
             <div class="finished-stats-title">Статистика игры</div>
             <dl class="small">
-                <dt>⌛ Длительность</dt>
+                <dt>⌛ Время</dt>
                 <dd>${durationLabel(start, finish)}</dd>
                 <dt>🕰️ Начало</dt>
                 <dd>${moscowDateTimeLabel(start)}</dd>
@@ -1269,6 +1277,7 @@
         whitePlayer.textContent = `Белые: ${playerName(game.white_player)}`;
         blackPlayer.textContent = `Черные: ${playerName(game.black_player)}`;
         statusLine.textContent = statusText();
+        renderCurrentGameDuration();
         dicePanel.classList.toggle('d-none', game.status === 'finished');
         renderDice();
         const remainingLabels = diceValueLabels(game.remaining_moves);
@@ -1434,5 +1443,6 @@
     }
 
     loadState();
+    window.setInterval(renderCurrentGameDuration, 1000);
     connectStateSocket();
 }());

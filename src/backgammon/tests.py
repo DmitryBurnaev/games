@@ -821,6 +821,9 @@ class GameRulesTests(TestCase):
 
     def test_serialized_game_includes_timestamps_and_double_roll_counts(self) -> None:
         """The detail UI receives final-game stats for rendering."""
+        self.white.first_name = "White"
+        self.white.last_name = "Player"
+        self.white.save(update_fields=["first_name", "last_name"])
         game = self.active_game()
         game.started_at = datetime(2026, 5, 3, 10, 5, tzinfo=datetime_timezone.utc)
         game.finished_at = datetime(2026, 5, 3, 11, 23, tzinfo=datetime_timezone.utc)
@@ -849,6 +852,8 @@ class GameRulesTests(TestCase):
         self.assertEqual(payload["started_at"], "2026-05-03T10:05:00+00:00")
         self.assertEqual(payload["finished_at"], "2026-05-03T11:23:00+00:00")
         self.assertEqual(payload["double_rolls"], {"white": 1, "black": 1})
+        self.assertEqual(payload["white_player"]["display_name"], "White Player")
+        self.assertEqual(payload["black_player"]["display_name"], "black")
 
     def test_move_markers_count_multiple_checkers_on_same_point(self) -> None:
         """Markers count multiple moved checkers landing on one point."""
@@ -1028,7 +1033,12 @@ class GameLobbyTests(TestCase):
     def setUp(self) -> None:
         """Create users and log in the viewer."""
         User = get_user_model()
-        self.viewer = User.objects.create_user(username="viewer", password="pass")
+        self.viewer = User.objects.create_user(
+            username="viewer",
+            password="pass",
+            first_name="Vera",
+            last_name="Viewer",
+        )
         self.opponent = User.objects.create_user(username="opponent", password="pass")
         self.client.force_login(self.viewer)
 
@@ -1085,8 +1095,9 @@ class GameLobbyTests(TestCase):
         self.assertNotContains(response, "🗓️")
         self.assertContains(response, "⌛ 1 час 18 мин")
         self.assertNotContains(response, "дубли:")
-        self.assertContains(response, "viewer ⇆ opponent")
-        self.assertContains(response, "viewer ⇆ opponent 🌚")
+        self.assertContains(response, "Vera Viewer ⇆ opponent")
+        self.assertContains(response, "Vera Viewer ⇆ opponent 🌚")
+        self.assertNotContains(response, "viewer ⇆ opponent")
         self.assertContains(response, "победа")
         self.assertContains(response, "text-bg-success")
         self.assertContains(response, "поражение")
@@ -1099,6 +1110,22 @@ class GameLobbyTests(TestCase):
         self.assertNotContains(response, "Победил:")
         self.assertNotContains(response, "Active")
         self.assertNotContains(response, "Finished")
+
+    def test_active_game_detail_includes_current_duration(self) -> None:
+        """The board includes a live duration slot for an active game."""
+        game = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            current_player=self.viewer,
+            status=Game.Status.ACTIVE,
+        )
+
+        response = self.client.get(reverse("backgammon:game_detail", args=[game.pk]))
+
+        self.assertContains(response, 'id="game-duration-line"')
+        self.assertContains(response, 'id="game-duration"')
+        self.assertContains(response, "⌛ <span")
+        self.assertNotContains(response, "⌛ Время:")
 
 
 class GameDebugToolsTests(TestCase):
