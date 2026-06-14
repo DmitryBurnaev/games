@@ -189,6 +189,26 @@ class AppSettingsTests(TestCase):
         """The quick-notification feature flag is environment-backed for now."""
         self.assertFalse(backgammon_quick_notifications_enabled())
 
+    @override_settings(BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=True)
+    def test_quick_notifications_enabled_setting_uses_database_value(self) -> None:
+        """Enabled DB settings can override the quick-notification feature flag."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+            defaults={"value": "false", "is_enabled": True},
+        )
+
+        self.assertFalse(backgammon_quick_notifications_enabled())
+
+    @override_settings(BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=True)
+    def test_disabled_quick_notifications_setting_uses_fallback_value(self) -> None:
+        """Disabled quick-notification rows leave the environment fallback active."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+            defaults={"value": "false", "is_enabled": False},
+        )
+
+        self.assertTrue(backgammon_quick_notifications_enabled())
+
     def test_admin_form_shows_raw_setting_keys(self) -> None:
         """Admin key choices use the exact runtime setting names."""
         choices = dict(AppSettingAdminForm().fields["key"].choices)
@@ -247,6 +267,19 @@ class AppSettingsTests(TestCase):
             data={
                 "key": AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
                 "value": "999",
+                "is_enabled": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("value", form.errors)
+
+    def test_admin_form_validates_quick_notification_enabled_values(self) -> None:
+        """Quick-notification feature flag accepts only boolean aliases."""
+        form = AppSettingAdminForm(
+            data={
+                "key": AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+                "value": "sometimes",
                 "is_enabled": "on",
             }
         )

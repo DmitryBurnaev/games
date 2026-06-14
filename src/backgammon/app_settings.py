@@ -106,7 +106,10 @@ def backgammon_poll_interval_ms() -> int:
 
 def backgammon_quick_notifications_enabled() -> bool:
     """Return whether quick opponent notifications are enabled."""
-    return settings.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED
+    return bool_setting(
+        AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+        lambda: settings.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+    )
 
 
 def backgammon_notification_display_ms() -> int:

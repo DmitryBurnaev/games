@@ -26,6 +26,10 @@ class AppSetting(models.Model):
             "BACKGAMMON_POLL_INTERVAL_MS",
             "Backgammon poll interval ms",
         )
+        BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED = (
+            "BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED",
+            "Backgammon quick notifications enabled",
+        )
         BACKGAMMON_NOTIFICATION_DISPLAY_MS = (
             "BACKGAMMON_NOTIFICATION_DISPLAY_MS",
             "Backgammon notification display ms",
