@@ -9,6 +9,7 @@
     const rollUrl = app.dataset.rollUrl;
     const moveUrl = app.dataset.moveUrl;
     const surrenderUrl = app.dataset.surrenderUrl;
+    const notificationUrl = app.dataset.notificationUrl;
     const undoUrl = app.dataset.undoUrl;
     const endTurnUrl = app.dataset.endTurnUrl;
     const prepareBearOffUrl = app.dataset.prepareBearOffUrl;
@@ -17,8 +18,11 @@
     const prepareBlockingEventUrl = app.dataset.prepareBlockingEventUrl;
     const debugGameTools = app.dataset.debugTools === '1';
     const moveAnimationsEnabled = app.dataset.animationsEnabled !== '0';
+    const quickNotificationsEnabled = app.dataset.quickNotificationsEnabled === '1';
     const configuredPollIntervalMs = parseInt(app.dataset.pollIntervalMs || '1000', 10);
     const pollIntervalMs = Math.max(configuredPollIntervalMs || 1000, 250);
+    const configuredNotificationDisplayMs = parseInt(app.dataset.notificationDisplayMs || '4500', 10);
+    const fallbackNotificationDisplayMs = Math.max(configuredNotificationDisplayMs || 4500, 1000);
     const gameDebugId = debugGameTools ? app.dataset.gameId || null : null;
     const domovoyImages = [app.dataset.domovoyOne, app.dataset.domovoyTwo].filter(Boolean);
     const csrfToken = app.querySelector('[name=csrfmiddlewaretoken]').value;
@@ -39,6 +43,9 @@
     const undoButton = document.getElementById('undo-button');
     const endTurnButton = document.getElementById('end-turn-button');
     const surrenderButton = document.getElementById('surrender-button');
+    const quickNotificationToast = document.getElementById('quick-notification-toast');
+    const quickNotificationActions = document.getElementById('quick-notification-actions');
+    const quickNotificationButtons = Array.from(document.querySelectorAll('.quick-notification-button'));
     const prepareBearOffButton = document.getElementById('prepare-bear-off-button');
     const prepareVictoryButton = document.getElementById('prepare-victory-button');
     const prepareExtraHeadMoveButton = document.getElementById('prepare-extra-head-move-button');
@@ -62,11 +69,13 @@
     let diceAnimationStartedAt = 0;
     let diceAnimationFrame = 0;
     let domovoyTimer = null;
+    let quickNotificationTimer = null;
     let joinedGameAlertTimer = null;
     let lastDiceKey = '';
     let lastVictoryKey = '';
     let nextMoveAnimationAt = 0;
     const animatedMoveKeys = new Set();
+    const shownNotificationIds = new Set();
     const minDiceRollMs = 1100;
     const moveAnimationMs = {
         own: 300,
@@ -104,6 +113,47 @@
 
     function showError(message) {
         errorLine.textContent = message || '';
+    }
+
+    function notificationDisplayMs() {
+        const stateDisplayMs = parseInt((game && game.notification_display_ms) || '', 10);
+        return Math.max(stateDisplayMs || fallbackNotificationDisplayMs, 1000);
+    }
+
+    function showQuickNotification(notification) {
+        if (!quickNotificationToast || !notification) {
+            return;
+        }
+        window.clearTimeout(quickNotificationTimer);
+        const sender = playerName(notification.sender);
+        quickNotificationToast.textContent = sender
+            ? `${sender}: ${notification.text}`
+            : notification.text;
+        quickNotificationToast.classList.add('show');
+        quickNotificationTimer = window.setTimeout(() => {
+            quickNotificationToast.classList.remove('show');
+        }, notificationDisplayMs());
+    }
+
+    function renderQuickNotifications() {
+        const notifications = Array.isArray(game.quick_notifications)
+            ? game.quick_notifications
+            : [];
+        notifications.forEach((notification) => {
+            if (!notification || shownNotificationIds.has(notification.id)) {
+                return;
+            }
+            shownNotificationIds.add(notification.id);
+            showQuickNotification(notification);
+        });
+        if (shownNotificationIds.size > 200) {
+            shownNotificationIds.clear();
+            notifications.forEach((notification) => {
+                if (notification && notification.id) {
+                    shownNotificationIds.add(notification.id);
+                }
+            });
+        }
     }
 
     function victoryTypeName(type) {
@@ -1291,6 +1341,15 @@
         endTurnButton.disabled = !game.can_end_turn || diceAnimating;
         surrenderButton.disabled = !game.can_surrender || diceAnimating;
         surrenderButton.classList.toggle('d-none', game.status !== 'active');
+        if (quickNotificationActions) {
+            quickNotificationActions.classList.toggle(
+                'd-none',
+                !quickNotificationsEnabled || !game.can_send_quick_notifications,
+            );
+        }
+        quickNotificationButtons.forEach((button) => {
+            button.disabled = !quickNotificationsEnabled || !game.can_send_quick_notifications;
+        });
         if (prepareBearOffButton) {
             prepareBearOffButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
         }
@@ -1309,6 +1368,7 @@
         renderBoard();
         renderMoves();
         renderFinishedStats();
+        renderQuickNotifications();
         maybeShowVictoryAnimation();
     }
 
@@ -1384,6 +1444,26 @@
         } catch (error) {
             showError(error.message);
         }
+    });
+
+    quickNotificationButtons.forEach((button) => {
+        button.addEventListener('click', async () => {
+            try {
+                showError('');
+                button.disabled = true;
+                const nextGame = await requestJson(notificationUrl, {
+                    method: 'POST',
+                    body: { text: button.dataset.notificationText },
+                });
+                receiveGameState(nextGame, 'auto');
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                if (game && quickNotificationsEnabled && game.can_send_quick_notifications) {
+                    button.disabled = false;
+                }
+            }
+        });
     });
 
     if (debugGameTools && prepareBearOffButton) {

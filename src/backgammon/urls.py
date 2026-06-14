@@ -15,6 +15,11 @@ urlpatterns = [
     path("games/<int:pk>/move/", views.move, name="move"),
     path("games/<int:pk>/surrender/", views.surrender, name="surrender"),
     path(
+        "games/<int:pk>/notifications/",
+        views.send_notification,
+        name="send_notification",
+    ),
+    path(
         "games/<int:pk>/prepare-bear-off/",
         views.prepare_bear_off,
         name="prepare_bear_off",

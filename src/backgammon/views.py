@@ -20,18 +20,22 @@ from django.views.decorators.http import require_POST
 from .app_settings import (
     backgammon_animations_enabled,
     backgammon_debug_tools,
+    backgammon_notification_display_ms,
     backgammon_poll_interval_ms,
+    backgammon_quick_notifications_enabled,
 )
 from .models import Game, GameMove, PlayerStats
 from .realtime import notify_game_updated
 from .services import (
     GameError,
+    QUICK_NOTIFICATION_TEXTS,
     apply_move,
     arrange_blocking_event_test,
     arrange_checkers_for_victory_test,
     arrange_extra_head_move_test,
     arrange_checkers_in_home,
     create_roll,
+    create_quick_notification,
     finish_blocked_turn,
     roll_die,
     serialize_game,
@@ -161,6 +165,9 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "debug_game_tools": backgammon_debug_tools(),
             "animations_enabled": backgammon_animations_enabled(),
             "poll_interval_ms": backgammon_poll_interval_ms(),
+            "quick_notifications_enabled": backgammon_quick_notifications_enabled(),
+            "notification_display_ms": backgammon_notification_display_ms(),
+            "quick_notification_texts": QUICK_NOTIFICATION_TEXTS,
         },
     )
 
@@ -296,6 +303,23 @@ def surrender(request: HttpRequest, pk: int) -> JsonResponse:
         with transaction.atomic():
             game = get_participant_game(pk, request.user, for_update=True)
             surrender_game(game, request.user, data.get("victory_type"))
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def send_notification(request: HttpRequest, pk: int) -> JsonResponse:
+    """Send a predefined quick notification to the opponent."""
+    try:
+        data = get_json_body(request)
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            create_quick_notification(game, request.user, data.get("text", ""))
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
             queue_game_update(game.pk)

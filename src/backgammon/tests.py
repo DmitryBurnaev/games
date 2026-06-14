@@ -16,10 +16,12 @@ from .app_settings import (
     backgammon_animations_enabled,
     backgammon_debug_tools,
     backgammon_dice_mode,
+    backgammon_notification_display_ms,
     backgammon_poll_interval_ms,
+    backgammon_quick_notifications_enabled,
 )
 from .admin import AppSettingAdminForm
-from .models import AppSetting, Game, GameMove, PlayerStats
+from .models import AppSetting, Game, GameMove, GameNotification, PlayerStats
 from .realtime import game_group_name
 from .routing import websocket_urlpatterns
 from .services import (
@@ -162,6 +164,31 @@ class AppSettingsTests(TestCase):
 
         self.assertEqual(backgammon_poll_interval_ms(), 250)
 
+    @override_settings(BACKGAMMON_NOTIFICATION_DISPLAY_MS=4500)
+    def test_notification_display_setting_uses_database_value(self) -> None:
+        """Quick-notification display duration is DB-overridable."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+            defaults={"value": "1200", "is_enabled": True},
+        )
+
+        self.assertEqual(backgammon_notification_display_ms(), 1200)
+
+    @override_settings(BACKGAMMON_NOTIFICATION_DISPLAY_MS=4500)
+    def test_notification_display_setting_uses_minimum_value(self) -> None:
+        """Quick-notification display duration has a safe lower bound."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+            defaults={"value": "50", "is_enabled": True},
+        )
+
+        self.assertEqual(backgammon_notification_display_ms(), 1000)
+
+    @override_settings(BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=False)
+    def test_quick_notifications_enabled_setting_uses_environment_value(self) -> None:
+        """The quick-notification feature flag is environment-backed for now."""
+        self.assertFalse(backgammon_quick_notifications_enabled())
+
     def test_admin_form_shows_raw_setting_keys(self) -> None:
         """Admin key choices use the exact runtime setting names."""
         choices = dict(AppSettingAdminForm().fields["key"].choices)
@@ -207,6 +234,19 @@ class AppSettingsTests(TestCase):
             data={
                 "key": AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS,
                 "value": "249",
+                "is_enabled": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("value", form.errors)
+
+    def test_admin_form_validates_notification_display_values(self) -> None:
+        """Notification display duration must be valid milliseconds."""
+        form = AppSettingAdminForm(
+            data={
+                "key": AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+                "value": "999",
                 "is_enabled": "on",
             }
         )
@@ -375,6 +415,132 @@ class GameStateWebSocketTests(TransactionTestCase):
         message = await communicator.receive_output(timeout=5)
 
         self.assertEqual(message["type"], "websocket.close")
+
+
+class GameNotificationTests(TestCase):
+    """Coverage for predefined in-game opponent notifications."""
+
+    def setUp(self) -> None:
+        """Create users and an active game."""
+        User = get_user_model()
+        self.white = User.objects.create_user(username="white", password="pass")
+        self.black = User.objects.create_user(username="black", password="pass")
+        self.other = User.objects.create_user(username="other", password="pass")
+        self.game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+        )
+
+    def test_send_notification_persists_predefined_text_for_opponent(self) -> None:
+        """A participant can send an allowed quick notification to the opponent."""
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:send_notification", args=[self.game.pk]),
+            data=json.dumps({"text": "Поздравляю 🎉"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        notification = GameNotification.objects.get()
+        self.assertEqual(notification.game, self.game)
+        self.assertEqual(notification.sender, self.white)
+        self.assertEqual(notification.recipient, self.black)
+        self.assertEqual(notification.text, "Поздравляю 🎉")
+
+    def test_send_notification_rejects_free_form_text(self) -> None:
+        """Free-form texts are rejected so the feature does not become chat."""
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:send_notification", args=[self.game.pk]),
+            data=json.dumps({"text": "hello from chat"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GameNotification.objects.exists())
+
+    def test_non_participant_cannot_send_notification(self) -> None:
+        """Only seated players can send quick notifications."""
+        self.client.force_login(self.other)
+
+        response = self.client.post(
+            reverse("backgammon:send_notification", args=[self.game.pk]),
+            data=json.dumps({"text": "Поздравляю 🎉"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GameNotification.objects.exists())
+
+    def test_recipient_payload_includes_recent_notification(self) -> None:
+        """Serialized state exposes recent notifications to the recipient only."""
+        GameNotification.objects.create(
+            game=self.game,
+            sender=self.white,
+            recipient=self.black,
+            text="Поздравляю 🎉",
+        )
+
+        sender_payload = serialize_game(self.game, self.white)
+        recipient_payload = serialize_game(self.game, self.black)
+
+        self.assertEqual(sender_payload["quick_notifications"], [])
+        self.assertEqual(len(recipient_payload["quick_notifications"]), 1)
+        self.assertEqual(
+            recipient_payload["quick_notifications"][0]["text"],
+            "Поздравляю 🎉",
+        )
+
+    @override_settings(BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=False)
+    def test_disabled_notifications_are_not_serialized(self) -> None:
+        """The env feature flag hides notification state from the browser."""
+        GameNotification.objects.create(
+            game=self.game,
+            sender=self.white,
+            recipient=self.black,
+            text="Поздравляю 🎉",
+        )
+
+        payload = serialize_game(self.game, self.black)
+
+        self.assertFalse(payload["can_send_quick_notifications"])
+        self.assertEqual(payload["quick_notifications"], [])
+
+    @override_settings(BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=False)
+    def test_disabled_notifications_reject_send_endpoint(self) -> None:
+        """The env feature flag prevents new notifications from being sent."""
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:send_notification", args=[self.game.pk]),
+            data=json.dumps({"text": "Поздравляю 🎉"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GameNotification.objects.exists())
+
+    @patch("backgammon.views.notify_game_updated")
+    def test_send_notification_publishes_realtime_update_after_commit(
+        self,
+        notify_game_updated_mock,
+    ) -> None:
+        """Sending a notification queues the same realtime update flow as moves."""
+        self.client.force_login(self.white)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("backgammon:send_notification", args=[self.game.pk]),
+                data=json.dumps({"text": "Нет связи! Перезвони 🙂"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        notify_game_updated_mock.assert_called_once_with(self.game.pk)
 
 
 class GameRulesTests(TestCase):

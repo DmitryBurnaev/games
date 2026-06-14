@@ -11,12 +11,15 @@
     data-roll-url="{% url 'backgammon:roll' game.pk %}"
     data-move-url="{% url 'backgammon:move' game.pk %}"
     data-surrender-url="{% url 'backgammon:surrender' game.pk %}"
+    data-notification-url="{% url 'backgammon:send_notification' game.pk %}"
     data-undo-url="{% url 'backgammon:undo_move' game.pk %}"
     data-end-turn-url="{% url 'backgammon:end_turn' game.pk %}"
     data-game-id="{{ game.pk }}"
     data-debug-tools="{% if debug_game_tools %}1{% else %}0{% endif %}"
     data-animations-enabled="{% if animations_enabled %}1{% else %}0{% endif %}"
     data-poll-interval-ms="{{ poll_interval_ms }}"
+    data-quick-notifications-enabled="{% if quick_notifications_enabled %}1{% else %}0{% endif %}"
+    data-notification-display-ms="{{ notification_display_ms }}"
     {% if debug_game_tools %}
     data-prepare-bear-off-url="{% url 'backgammon:prepare_bear_off' game.pk %}"
     data-prepare-victory-url="{% url 'backgammon:prepare_victory' game.pk %}"
@@ -92,10 +95,19 @@
                 <div>Выведено белых: <strong id="white-off">0</strong></div>
                 <div>Выведено черных: <strong id="black-off">0</strong></div>
             </div>
+            {% if quick_notifications_enabled %}
+                <div id="quick-notification-actions" class="quick-notification-actions{% if game.status != 'active' %} d-none{% endif %}" aria-label="Быстрые уведомления">
+                    {% for notification_text in quick_notification_texts %}
+                        <button class="btn btn-light quick-notification-button" type="button" data-notification-text="{{ notification_text }}">{{ notification_text }}</button>
+                    {% endfor %}
+                </div>
+            {% endif %}
         </section>
     </div>
 
+    <div id="quick-notification-toast" class="quick-notification-toast" role="status" aria-live="polite"></div>
+
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=51"></script>
+<script src="{% static 'backgammon/game.js' %}?v=53"></script>
 {% endblock %}

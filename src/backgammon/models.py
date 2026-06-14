@@ -26,6 +26,10 @@ class AppSetting(models.Model):
             "BACKGAMMON_POLL_INTERVAL_MS",
             "Backgammon poll interval ms",
         )
+        BACKGAMMON_NOTIFICATION_DISPLAY_MS = (
+            "BACKGAMMON_NOTIFICATION_DISPLAY_MS",
+            "Backgammon notification display ms",
+        )
 
     key = models.CharField(max_length=96, unique=True)
     value = models.TextField(blank=True)
@@ -178,6 +182,37 @@ class GameMove(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_action_display()} in game #{self.game_id}"
+
+
+class GameNotification(models.Model):
+    """A persisted predefined quick notification sent between game opponents."""
+
+    game = models.ForeignKey(
+        Game,
+        related_name="notifications",
+        on_delete=models.CASCADE,
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="sent_backgammon_notifications",
+        on_delete=models.CASCADE,
+    )
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="received_backgammon_notifications",
+        on_delete=models.CASCADE,
+    )
+    text = models.CharField(max_length=160)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["game", "recipient", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Notification in game #{self.game_id}: {self.text}"
 
 
 class PlayerStats(models.Model):
