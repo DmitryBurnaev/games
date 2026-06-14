@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import secrets
+from datetime import timedelta
 from typing import Any
 
 from django.db.models import F, QuerySet
 from django.utils import timezone
 
-from .app_settings import DICE_MODE_PLAYER_BAG, backgammon_dice_mode
-from .models import Board, Game, GameMove, PlayerStats
+from .app_settings import (
+    DICE_MODE_PLAYER_BAG,
+    backgammon_dice_mode,
+    backgammon_notification_display_ms,
+    backgammon_quick_notifications_enabled,
+)
+from .models import Board, Game, GameMove, GameNotification, PlayerStats
 
 PlayerPayload = dict[str, Any] | None
 MovePayload = dict[str, Any]
 MarkerPayload = dict[str, Any]
+NotificationPayload = dict[str, Any]
 
 
 PATHS: dict[Game.Color, list[int]] = {
@@ -25,6 +32,10 @@ HEADS: dict[Game.Color, int] = {
 HOME_START = 18
 DICE_PAIR_BAG: tuple[tuple[int, int], ...] = tuple(
     (left, right) for left in range(1, 7) for right in range(1, 7)
+)
+QUICK_NOTIFICATION_TEXTS = (
+    "Поздравляю 🎉",
+    "Нет связи! Перезвони 🙂",
 )
 
 
@@ -655,6 +666,62 @@ def last_move_marker(game: Game, viewer: Any) -> MarkerPayload | None:
     return markers[-1] if markers else None
 
 
+def quick_notification_payload(
+    notification: GameNotification,
+) -> NotificationPayload:
+    """Return a quick-notification payload for browser rendering."""
+    return {
+        "id": notification.id,
+        "text": notification.text,
+        "sender": player_payload(notification.sender),
+        "created_at": datetime_payload(notification.created_at),
+    }
+
+
+def quick_notifications_for_viewer(
+    game: Game, viewer: Any
+) -> list[NotificationPayload]:
+    """Return recent notifications addressed to the viewer."""
+    if not backgammon_quick_notifications_enabled() or not game.color_for(viewer):
+        return []
+    display_ms = backgammon_notification_display_ms()
+    visible_since = timezone.now() - timedelta(milliseconds=display_ms)
+    notifications = (
+        game.notifications.select_related("sender")
+        .filter(recipient=viewer, created_at__gte=visible_since)
+        .order_by("created_at", "pk")
+    )
+    return [quick_notification_payload(notification) for notification in notifications]
+
+
+def create_quick_notification(
+    game: Game,
+    sender: Any,
+    text: str,
+) -> GameNotification:
+    """Persist a predefined quick notification for the sender's opponent."""
+    if not backgammon_quick_notifications_enabled():
+        raise GameError("Быстрые уведомления выключены.")
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Уведомления доступны только в активной игре.")
+    if not game.color_for(sender):
+        raise GameError("Вы не участвуете в этой игре.")
+    recipient = game.opponent_for(sender)
+    if not recipient:
+        raise GameError("Некому отправить уведомление.")
+    normalized_text = (text or "").strip()
+    if normalized_text not in QUICK_NOTIFICATION_TEXTS:
+        raise GameError("Неизвестное быстрое уведомление.")
+    notification = GameNotification.objects.create(
+        game=game,
+        sender=sender,
+        recipient=recipient,
+        text=normalized_text,
+    )
+    game.save(update_fields=["updated_at"])
+    return notification
+
+
 def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     """Serialize a game into the JSON shape consumed by the browser UI."""
     viewer_color = game.color_for(viewer)
@@ -709,6 +776,14 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
             and not viewer_blocking_event
         ),
         "can_undo": can_undo_last_move(game, viewer),
+        "can_send_quick_notifications": (
+            backgammon_quick_notifications_enabled()
+            and game.status == Game.Status.ACTIVE
+            and bool(viewer_color)
+            and bool(game.opponent_for(viewer))
+        ),
+        "notification_display_ms": backgammon_notification_display_ms(),
+        "quick_notifications": quick_notifications_for_viewer(game, viewer),
         "last_move_marker": last_move_marker(game, viewer),
         "last_move_markers": last_move_markers(game, viewer),
         "last_move_steps": last_move_steps(game, viewer),

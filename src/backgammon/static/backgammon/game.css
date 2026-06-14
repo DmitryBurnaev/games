@@ -2,6 +2,10 @@ body {
     background: #f5f2eb;
 }
 
+#game-app {
+    position: relative;
+}
+
 .auth-panel {
     max-width: 440px;
 }
@@ -195,6 +199,67 @@ body {
     line-height: 1;
 }
 
+.quick-notification-actions {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: .5rem;
+    width: max-content;
+    max-width: 100%;
+    pointer-events: none;
+}
+
+.quick-notification-actions.d-none {
+    display: none;
+}
+
+.quick-notification-button {
+    max-width: min(15rem, 42vw);
+    overflow: hidden;
+    border: 1px solid rgba(43, 28, 15, .22);
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 8px 22px rgba(43, 28, 15, .16);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: auto;
+}
+
+.quick-notification-button:hover,
+.quick-notification-button:focus-visible {
+    background: #fff8df;
+    border-color: rgba(179, 92, 36, .5);
+}
+
+.quick-notification-toast {
+    position: fixed;
+    top: 4.25rem;
+    left: 50%;
+    z-index: 1060;
+    max-width: min(560px, calc(100vw - 2rem));
+    padding: .65rem .9rem;
+    transform: translate(-50%, -12px);
+    border: 1px solid rgba(25, 135, 84, .36);
+    border-radius: 8px;
+    background: rgba(246, 255, 249, .96);
+    color: #183f2a;
+    box-shadow: 0 12px 30px rgba(33, 37, 41, .18);
+    font-weight: 700;
+    line-height: 1.25;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .18s ease, transform .18s ease;
+}
+
+.quick-notification-toast.show {
+    transform: translate(-50%, 0);
+    opacity: 1;
+}
+
 .finished-stats-panel {
     display: none;
     margin-top: 1rem;
@@ -230,6 +295,7 @@ body {
 
 .board-wrap {
     min-width: 0;
+    position: relative;
 }
 
 .board {
@@ -577,9 +643,12 @@ body {
 
 .off-board {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 1rem;
+    min-height: 38px;
     margin-top: .75rem;
+    padding-right: clamp(390px, 42%, 650px);
+    align-items: center;
     color: #574638;
 }
 
@@ -628,5 +697,22 @@ body {
     .board-row {
         grid-template-columns: repeat(12, minmax(24px, 1fr));
         gap: .2rem;
+    }
+
+    .quick-notification-actions {
+        right: 0;
+        bottom: 0;
+        max-width: 100%;
+    }
+
+    .quick-notification-button {
+        max-width: calc(50vw - .75rem);
+        font-size: .84rem;
+    }
+
+    .off-board {
+        min-height: 84px;
+        padding-right: 0;
+        padding-bottom: 46px;
     }
 }

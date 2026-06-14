@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.utils.safestring import mark_safe
 
 from .app_settings import DICE_MODES, FALSE_VALUES, TRUE_VALUES
-from .models import AppSetting, Game, GameMove, PlayerStats
+from .models import AppSetting, Game, GameMove, GameNotification, PlayerStats
 
 BOOLEAN_SETTING_KEYS = {
     AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
@@ -16,7 +16,8 @@ APP_SETTING_VALUE_HELP = mark_safe(
     "BACKGAMMON_DEBUG_TOOLS: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_DICE_MODE: independent, player_bag<br>"
     "BACKGAMMON_ANIMATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
-    "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250"
+    "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250<br>"
+    "BACKGAMMON_NOTIFICATION_DISPLAY_MS: integer milliseconds, minimum effective value is 1000"
 )
 
 
@@ -52,13 +53,21 @@ class AppSettingAdminForm(forms.ModelForm):
                 raise forms.ValidationError("Use one of: independent, player_bag.")
             return value
 
-        if key == AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS:
+        if key in {
+            AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS,
+            AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+        }:
             try:
                 parsed = int(value)
             except ValueError:
                 raise forms.ValidationError("Use an integer number of milliseconds.")
-            if parsed < 250:
-                raise forms.ValidationError("Use an integer value of 250 or greater.")
+            min_value = (
+                250 if key == AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS else 1000
+            )
+            if parsed < min_value:
+                raise forms.ValidationError(
+                    f"Use an integer value of {min_value} or greater."
+                )
             return str(parsed)
 
         return value
@@ -115,6 +124,21 @@ class GameMoveAdmin(admin.ModelAdmin):
     )
     list_filter = ("action", "created_at")
     search_fields = ("game__id", "player__username")
+
+
+@admin.register(GameNotification)
+class GameNotificationAdmin(admin.ModelAdmin):
+    """Admin view for persisted quick notifications."""
+
+    list_display = ("id", "game", "sender", "recipient", "text", "created_at")
+    list_filter = ("created_at",)
+    search_fields = (
+        "game__id",
+        "sender__username",
+        "recipient__username",
+        "text",
+    )
+    readonly_fields = ("created_at",)
 
 
 @admin.register(PlayerStats)
