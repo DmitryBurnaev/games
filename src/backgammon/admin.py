@@ -8,6 +8,7 @@ from .models import AppSetting, Game, GameMove, GameNotification, PlayerStats
 BOOLEAN_SETTING_KEYS = {
     AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
     AppSetting.Key.BACKGAMMON_ANIMATIONS_ENABLED,
+    AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
 }
 RAW_SETTING_KEY_CHOICES = [(key, key) for key in AppSetting.Key.values]
 
@@ -16,6 +17,7 @@ APP_SETTING_VALUE_HELP = mark_safe(
     "BACKGAMMON_DEBUG_TOOLS: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_DICE_MODE: independent, player_bag<br>"
     "BACKGAMMON_ANIMATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
+    "BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250<br>"
     "BACKGAMMON_NOTIFICATION_DISPLAY_MS: integer milliseconds, minimum effective value is 1000"
 )

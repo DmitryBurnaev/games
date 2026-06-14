@@ -5,15 +5,24 @@ from django.conf import settings
 from django.db import migrations, models
 
 
-def seed_notification_display_setting(apps, schema_editor):
+def seed_notification_settings(apps, schema_editor):
     AppSetting = apps.get_model("backgammon", "AppSetting")
-    AppSetting.objects.get_or_create(
-        key="BACKGAMMON_NOTIFICATION_DISPLAY_MS",
-        defaults={
-            "value": str(settings.BACKGAMMON_NOTIFICATION_DISPLAY_MS),
-            "is_enabled": False,
-        },
-    )
+    initial_settings = {
+        "BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED": str(
+            settings.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED
+        ).lower(),
+        "BACKGAMMON_NOTIFICATION_DISPLAY_MS": str(
+            settings.BACKGAMMON_NOTIFICATION_DISPLAY_MS
+        ),
+    }
+    for key, value in initial_settings.items():
+        AppSetting.objects.get_or_create(
+            key=key,
+            defaults={
+                "value": value,
+                "is_enabled": False,
+            },
+        )
 
 
 class Migration(migrations.Migration):
@@ -74,7 +83,7 @@ class Migration(migrations.Migration):
             },
         ),
         migrations.RunPython(
-            seed_notification_display_setting,
+            seed_notification_settings,
             migrations.RunPython.noop,
         ),
     ]
