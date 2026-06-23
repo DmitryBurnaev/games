@@ -13,7 +13,14 @@ from .app_settings import (
     backgammon_notification_display_ms,
     backgammon_quick_notifications_enabled,
 )
-from .models import Board, Game, GameMove, GameNotification, PlayerStats
+from .models import (
+    Board,
+    Game,
+    GameMove,
+    GameNotification,
+    PlayerStats,
+    QuickNotificationPreset,
+)
 
 PlayerPayload = dict[str, Any] | None
 MovePayload = dict[str, Any]
@@ -32,10 +39,6 @@ HEADS: dict[Game.Color, int] = {
 HOME_START = 18
 DICE_PAIR_BAG: tuple[tuple[int, int], ...] = tuple(
     (left, right) for left in range(1, 7) for right in range(1, 7)
-)
-QUICK_NOTIFICATION_TEXTS = (
-    "Поздравляю 🎉",
-    "Нет связи! Перезвони 🙂",
 )
 
 
@@ -694,6 +697,11 @@ def quick_notifications_for_viewer(
     return [quick_notification_payload(notification) for notification in notifications]
 
 
+def quick_notification_options() -> list[dict[str, str]]:
+    """Return admin-configured notification controls in display order."""
+    return list(QuickNotificationPreset.objects.values("text", "emoji"))
+
+
 def create_quick_notification(
     game: Game,
     sender: Any,
@@ -710,7 +718,7 @@ def create_quick_notification(
     if not recipient:
         raise GameError("Некому отправить уведомление.")
     normalized_text = (text or "").strip()
-    if normalized_text not in QUICK_NOTIFICATION_TEXTS:
+    if not QuickNotificationPreset.objects.filter(text=normalized_text).exists():
         raise GameError("Неизвестное быстрое уведомление.")
     notification = GameNotification.objects.create(
         game=game,
