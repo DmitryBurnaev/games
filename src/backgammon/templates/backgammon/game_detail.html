@@ -32,7 +32,7 @@
     {% csrf_token %}
 
     <div class="game-shell">
-        <aside class="game-side{% if game.status != 'finished' %} game-side-short{% endif %}">
+        <aside class="game-side">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
                 <div>
                     <h1 class="h4 mb-1">Игра #{{ game.pk }}</h1>
@@ -97,8 +97,14 @@
             </div>
             {% if quick_notifications_enabled %}
                 <div id="quick-notification-actions" class="quick-notification-actions{% if game.status != 'active' %} d-none{% endif %}" aria-label="Быстрые уведомления">
-                    {% for notification_text in quick_notification_texts %}
-                        <button class="btn btn-light quick-notification-button" type="button" data-notification-text="{{ notification_text }}">{{ notification_text }}</button>
+                    {% for notification in quick_notification_options %}
+                        <button
+                            class="btn btn-light quick-notification-button"
+                            type="button"
+                            data-notification-text="{{ notification.text }}"
+                            aria-label="{{ notification.text }}"
+                            title="{{ notification.text }}"
+                        >{{ notification.emoji }}</button>
                     {% endfor %}
                 </div>
             {% endif %}
@@ -109,5 +115,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=53"></script>
+<script src="{% static 'backgammon/game.js' %}?v=54"></script>
 {% endblock %}

@@ -28,7 +28,6 @@ from .models import Game, GameMove, PlayerStats
 from .realtime import notify_game_updated
 from .services import (
     GameError,
-    QUICK_NOTIFICATION_TEXTS,
     apply_move,
     arrange_blocking_event_test,
     arrange_checkers_for_victory_test,
@@ -37,6 +36,7 @@ from .services import (
     create_roll,
     create_quick_notification,
     finish_blocked_turn,
+    quick_notification_options,
     roll_die,
     serialize_game,
     surrender_game,
@@ -167,7 +167,7 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "poll_interval_ms": backgammon_poll_interval_ms(),
             "quick_notifications_enabled": backgammon_quick_notifications_enabled(),
             "notification_display_ms": backgammon_notification_display_ms(),
-            "quick_notification_texts": QUICK_NOTIFICATION_TEXTS,
+            "quick_notification_options": quick_notification_options(),
         },
     )
 

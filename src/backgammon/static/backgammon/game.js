@@ -1323,7 +1323,6 @@
         }
         renderTurnState();
         renderPageMessages();
-        gameSide.classList.toggle('game-side-short', game.status !== 'finished');
         whitePlayer.textContent = `Белые: ${playerName(game.white_player)}`;
         blackPlayer.textContent = `Черные: ${playerName(game.black_player)}`;
         statusLine.textContent = statusText();

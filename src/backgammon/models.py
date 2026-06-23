@@ -188,6 +188,20 @@ class GameMove(models.Model):
         return f"{self.get_action_display()} in game #{self.game_id}"
 
 
+class QuickNotificationPreset(models.Model):
+    """An admin-configurable quick notification available during a game."""
+
+    emoji = models.CharField(max_length=16)
+    text = models.CharField(max_length=160, unique=True)
+    sort_order = models.PositiveIntegerField(default=0, db_index=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+
+    def __str__(self) -> str:
+        return f"{self.emoji} {self.text}"
+
+
 class GameNotification(models.Model):
     """A persisted predefined quick notification sent between game opponents."""
 

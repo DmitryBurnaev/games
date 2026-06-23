@@ -47,11 +47,6 @@ body {
     transition: background-color .25s ease, border-color .25s ease, box-shadow .25s ease;
 }
 
-.game-side.game-side-short {
-    height: calc(100% - 38px);
-    min-height: calc(100% - 38px);
-}
-
 .game-side.turn-mine {
     background: #f3fbf5;
     border-color: #2f9e44;
@@ -218,14 +213,16 @@ body {
 }
 
 .quick-notification-button {
-    max-width: min(15rem, 42vw);
-    overflow: hidden;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
     border: 1px solid rgba(43, 28, 15, .22);
     background: rgba(255, 255, 255, .92);
     box-shadow: 0 8px 22px rgba(43, 28, 15, .16);
-    font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 1.1rem;
+    line-height: 1;
     pointer-events: auto;
 }
 
@@ -682,7 +679,7 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .game-side.game-side-short {
+    .game-side {
         height: auto;
         min-height: 0;
         padding-bottom: 4.25rem;
@@ -706,8 +703,9 @@ body {
     }
 
     .quick-notification-button {
-        max-width: calc(50vw - .75rem);
-        font-size: .84rem;
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
     }
 
     .off-board {

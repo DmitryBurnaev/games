@@ -21,7 +21,14 @@ from .app_settings import (
     backgammon_quick_notifications_enabled,
 )
 from .admin import AppSettingAdminForm
-from .models import AppSetting, Game, GameMove, GameNotification, PlayerStats
+from .models import (
+    AppSetting,
+    Game,
+    GameMove,
+    GameNotification,
+    PlayerStats,
+    QuickNotificationPreset,
+)
 from .realtime import game_group_name
 from .routing import websocket_urlpatterns
 from .services import (
@@ -465,6 +472,21 @@ class GameNotificationTests(TestCase):
             current_player=self.white,
             status=Game.Status.ACTIVE,
         )
+        presets = (
+            ("🎉", "Поздравляю 🎉", 10),
+            ("🙂", "Нет связи! Перезвони 🙂", 20),
+            ("🎲", "Have a good game!", 30),
+            ("📝", "And then they’ll write: it was a duplicate", 40),
+            ("🤔", "Interesting move", 50),
+        )
+        for emoji, text, sort_order in presets:
+            QuickNotificationPreset.objects.update_or_create(
+                text=text,
+                defaults={
+                    "emoji": emoji,
+                    "sort_order": sort_order,
+                },
+            )
 
     def test_send_notification_persists_predefined_text_for_opponent(self) -> None:
         """A participant can send an allowed quick notification to the opponent."""
@@ -482,6 +504,83 @@ class GameNotificationTests(TestCase):
         self.assertEqual(notification.sender, self.white)
         self.assertEqual(notification.recipient, self.black)
         self.assertEqual(notification.text, "Поздравляю 🎉")
+
+    def test_new_notification_texts_can_be_sent(self) -> None:
+        """All notification phrases added for compact controls are allowed."""
+        self.client.force_login(self.white)
+        texts = (
+            "Have a good game!",
+            "And then they’ll write: it was a duplicate",
+            "Interesting move",
+        )
+
+        for text in texts:
+            with self.subTest(text=text):
+                response = self.client.post(
+                    reverse("backgammon:send_notification", args=[self.game.pk]),
+                    data=json.dumps({"text": text}),
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(
+            list(
+                GameNotification.objects.order_by("pk").values_list(
+                    "text",
+                    flat=True,
+                )
+            ),
+            list(texts),
+        )
+
+    def test_notification_controls_render_emoji_with_full_text_tooltips(self) -> None:
+        """Compact controls keep each full phrase available before sending."""
+        self.client.force_login(self.white)
+
+        response = self.client.get(
+            reverse("backgammon:game_detail", args=[self.game.pk])
+        )
+
+        self.assertContains(response, 'title="Have a good game!"')
+        self.assertContains(
+            response,
+            'title="And then they’ll write: it was a duplicate"',
+        )
+        self.assertContains(response, 'title="Interesting move"')
+        self.assertContains(response, ">🎲</button>")
+        self.assertContains(response, ">📝</button>")
+        self.assertContains(response, ">🤔</button>")
+
+    def test_notification_controls_follow_admin_sort_order(self) -> None:
+        """The configured sort order controls button placement."""
+        QuickNotificationPreset.objects.filter(text="Interesting move").update(
+            sort_order=1
+        )
+        self.client.force_login(self.white)
+
+        response = self.client.get(
+            reverse("backgammon:game_detail", args=[self.game.pk])
+        )
+        content = response.content.decode()
+
+        self.assertLess(
+            content.index('title="Interesting move"'),
+            content.index('title="Поздравляю 🎉"'),
+        )
+
+    def test_deleted_notification_preset_cannot_be_sent(self) -> None:
+        """Removing an admin preset immediately removes it from the allowlist."""
+        QuickNotificationPreset.objects.filter(text="Interesting move").delete()
+        self.client.force_login(self.white)
+
+        response = self.client.post(
+            reverse("backgammon:send_notification", args=[self.game.pk]),
+            data=json.dumps({"text": "Interesting move"}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(GameNotification.objects.exists())
 
     def test_send_notification_rejects_free_form_text(self) -> None:
         """Free-form texts are rejected so the feature does not become chat."""

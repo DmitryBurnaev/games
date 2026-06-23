@@ -3,7 +3,14 @@ from django.contrib import admin
 from django.utils.safestring import mark_safe
 
 from .app_settings import DICE_MODES, FALSE_VALUES, TRUE_VALUES
-from .models import AppSetting, Game, GameMove, GameNotification, PlayerStats
+from .models import (
+    AppSetting,
+    Game,
+    GameMove,
+    GameNotification,
+    PlayerStats,
+    QuickNotificationPreset,
+)
 
 BOOLEAN_SETTING_KEYS = {
     AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
@@ -141,6 +148,16 @@ class GameNotificationAdmin(admin.ModelAdmin):
         "text",
     )
     readonly_fields = ("created_at",)
+
+
+@admin.register(QuickNotificationPreset)
+class QuickNotificationPresetAdmin(admin.ModelAdmin):
+    """Admin view for configuring the available quick notifications."""
+
+    list_display = ("id", "emoji", "text", "sort_order")
+    list_editable = ("emoji", "text", "sort_order")
+    ordering = ("sort_order", "id")
+    search_fields = ("emoji", "text")
 
 
 @admin.register(PlayerStats)
