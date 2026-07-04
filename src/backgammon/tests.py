@@ -473,11 +473,11 @@ class GameNotificationTests(TestCase):
             status=Game.Status.ACTIVE,
         )
         presets = (
-            ("🎉", "Поздравляю 🎉", 10),
-            ("🙂", "Нет связи! Перезвони 🙂", 20),
-            ("🎲", "Have a good game!", 30),
-            ("📝", "And then they’ll write: it was a duplicate", 40),
-            ("🤔", "Interesting move", 50),
+            ("🎉", "Congratulations! 🎉", 10),
+            ("🙂", "No connection! Call me back 🙂", 20),
+            ("🎲", "Have a good game! 🎲", 30),
+            ("📝", "And then they’ll write: it was a duplicate 📝", 40),
+            ("🤔", "Interesting move 🤔", 50),
         )
         for emoji, text, sort_order in presets:
             QuickNotificationPreset.objects.update_or_create(
@@ -494,7 +494,7 @@ class GameNotificationTests(TestCase):
 
         response = self.client.post(
             reverse("backgammon:send_notification", args=[self.game.pk]),
-            data=json.dumps({"text": "Поздравляю 🎉"}),
+            data=json.dumps({"text": "Congratulations! 🎉"}),
             content_type="application/json",
         )
 
@@ -503,15 +503,15 @@ class GameNotificationTests(TestCase):
         self.assertEqual(notification.game, self.game)
         self.assertEqual(notification.sender, self.white)
         self.assertEqual(notification.recipient, self.black)
-        self.assertEqual(notification.text, "Поздравляю 🎉")
+        self.assertEqual(notification.text, "Congratulations! 🎉")
 
     def test_new_notification_texts_can_be_sent(self) -> None:
         """All notification phrases added for compact controls are allowed."""
         self.client.force_login(self.white)
         texts = (
-            "Have a good game!",
-            "And then they’ll write: it was a duplicate",
-            "Interesting move",
+            "Have a good game! 🎲",
+            "And then they’ll write: it was a duplicate 📝",
+            "Interesting move 🤔",
         )
 
         for text in texts:
@@ -541,19 +541,19 @@ class GameNotificationTests(TestCase):
             reverse("backgammon:game_detail", args=[self.game.pk])
         )
 
-        self.assertContains(response, 'title="Have a good game!"')
+        self.assertContains(response, 'title="Have a good game! 🎲"')
         self.assertContains(
             response,
-            'title="And then they’ll write: it was a duplicate"',
+            'title="And then they’ll write: it was a duplicate 📝"',
         )
-        self.assertContains(response, 'title="Interesting move"')
+        self.assertContains(response, 'title="Interesting move 🤔"')
         self.assertContains(response, ">🎲</button>")
         self.assertContains(response, ">📝</button>")
         self.assertContains(response, ">🤔</button>")
 
     def test_notification_controls_follow_admin_sort_order(self) -> None:
         """The configured sort order controls button placement."""
-        QuickNotificationPreset.objects.filter(text="Interesting move").update(
+        QuickNotificationPreset.objects.filter(text="Interesting move 🤔").update(
             sort_order=1
         )
         self.client.force_login(self.white)
@@ -564,18 +564,18 @@ class GameNotificationTests(TestCase):
         content = response.content.decode()
 
         self.assertLess(
-            content.index('title="Interesting move"'),
-            content.index('title="Поздравляю 🎉"'),
+            content.index('title="Interesting move 🤔"'),
+            content.index('title="Congratulations! 🎉"'),
         )
 
     def test_deleted_notification_preset_cannot_be_sent(self) -> None:
         """Removing an admin preset immediately removes it from the allowlist."""
-        QuickNotificationPreset.objects.filter(text="Interesting move").delete()
+        QuickNotificationPreset.objects.filter(text="Interesting move 🤔").delete()
         self.client.force_login(self.white)
 
         response = self.client.post(
             reverse("backgammon:send_notification", args=[self.game.pk]),
-            data=json.dumps({"text": "Interesting move"}),
+            data=json.dumps({"text": "Interesting move 🤔"}),
             content_type="application/json",
         )
 
@@ -601,7 +601,7 @@ class GameNotificationTests(TestCase):
 
         response = self.client.post(
             reverse("backgammon:send_notification", args=[self.game.pk]),
-            data=json.dumps({"text": "Поздравляю 🎉"}),
+            data=json.dumps({"text": "Congratulations! 🎉"}),
             content_type="application/json",
         )
 
@@ -614,7 +614,7 @@ class GameNotificationTests(TestCase):
             game=self.game,
             sender=self.white,
             recipient=self.black,
-            text="Поздравляю 🎉",
+            text="Congratulations! 🎉",
         )
 
         sender_payload = serialize_game(self.game, self.white)
@@ -624,7 +624,7 @@ class GameNotificationTests(TestCase):
         self.assertEqual(len(recipient_payload["quick_notifications"]), 1)
         self.assertEqual(
             recipient_payload["quick_notifications"][0]["text"],
-            "Поздравляю 🎉",
+            "Congratulations! 🎉",
         )
 
     @override_settings(BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=False)
@@ -634,7 +634,7 @@ class GameNotificationTests(TestCase):
             game=self.game,
             sender=self.white,
             recipient=self.black,
-            text="Поздравляю 🎉",
+            text="Congratulations! 🎉",
         )
 
         payload = serialize_game(self.game, self.black)
@@ -649,7 +649,7 @@ class GameNotificationTests(TestCase):
 
         response = self.client.post(
             reverse("backgammon:send_notification", args=[self.game.pk]),
-            data=json.dumps({"text": "Поздравляю 🎉"}),
+            data=json.dumps({"text": "Congratulations! 🎉"}),
             content_type="application/json",
         )
 
@@ -667,7 +667,7 @@ class GameNotificationTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 reverse("backgammon:send_notification", args=[self.game.pk]),
-                data=json.dumps({"text": "Нет связи! Перезвони 🙂"}),
+                data=json.dumps({"text": "No connection! Call me back 🙂"}),
                 content_type="application/json",
             )
 
