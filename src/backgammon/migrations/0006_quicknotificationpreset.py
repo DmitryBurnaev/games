@@ -9,11 +9,11 @@ def seed_quick_notification_presets(apps, schema_editor):
         "QuickNotificationPreset",
     )
     presets = (
-        ("🎉", "Поздравляю 🎉", 10),
-        ("🙂", "Нет связи! Перезвони 🙂", 20),
-        ("🎲", "Have a good game!", 30),
-        ("📝", "And then they’ll write: it was a duplicate", 40),
-        ("🤔", "Interesting move", 50),
+        ("🎉", "Congratulations! 🎉", 10),
+        ("🙂", "No connection! Call me back 🙂", 20),
+        ("🎲", "Have a good game! 🎲", 30),
+        ("📝", "And then they’ll write: it was a duplicate 📝", 40),
+        ("🤔", "Interesting move 🤔", 50),
     )
     for emoji, text, sort_order in presets:
         QuickNotificationPreset.objects.get_or_create(
