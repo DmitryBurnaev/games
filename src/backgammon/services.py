@@ -144,9 +144,10 @@ def all_checkers_in_home(
     board: Board,
     borne_off: dict[str, int],
     color: Game.Color,
+    checker_count: int,
 ) -> bool:
     """Return whether all remaining checkers of a color are in its home board."""
-    if borne_off.get(color, 0) == 15:
+    if borne_off.get(color, 0) >= checker_count:
         return True
     for point in range(24):
         if (
@@ -306,7 +307,7 @@ def arrange_checkers_in_home(game: Game, user: Any) -> None:
     if not color:
         raise GameError("Вы не участвуете в этой игре.")
 
-    remaining = 15 - game.borne_off.get(color, 0)
+    remaining = game.checker_count - game.borne_off.get(color, 0)
     remove_color_from_board(game.board, color)
     available_home_points = [
         point
@@ -345,12 +346,13 @@ def arrange_checkers_for_victory_test(game: Game, user: Any) -> None:
         for point in home_points(color)
         if not game.board[point] or game.board[point].get("color") == color
     ]
-    if len(available_home_points) < 2:
-        raise GameError("В доме нет двух свободных пунктов для теста победы.")
+    home_checkers = min(2, game.checker_count)
+    if len(available_home_points) < home_checkers:
+        raise GameError("В доме нет свободных пунктов для теста победы.")
 
-    game.borne_off[color] = 13
-    add_checker(game.board, available_home_points[-2], color)
-    add_checker(game.board, available_home_points[-1], color)
+    game.borne_off[color] = game.checker_count - home_checkers
+    for offset in range(home_checkers):
+        add_checker(game.board, available_home_points[-(offset + 1)], color)
     game.current_player = user
     game.dice = []
     game.remaining_moves = []
@@ -373,9 +375,14 @@ def arrange_extra_head_move_test(game: Game, user: Any) -> None:
 
     game.moves.all().delete()
     game.board = [None for _ in range(24)]
-    game.board[HEADS[color]] = {"color": color, "count": 15}
-    game.board[HEADS[opponent]] = {"color": opponent, "count": 14}
-    game.board[blocked_target] = {"color": opponent, "count": 1}
+    game.board[HEADS[color]] = {"color": color, "count": game.checker_count}
+    if game.checker_count > 1:
+        game.board[HEADS[opponent]] = {
+            "color": opponent,
+            "count": game.checker_count - 1,
+        }
+    if game.checker_count > 0:
+        game.board[blocked_target] = {"color": opponent, "count": 1}
     game.borne_off = {Game.Color.WHITE: 0, Game.Color.BLACK: 0}
     game.current_player = user
     game.dice = [5, 5]
@@ -407,10 +414,13 @@ def arrange_blocking_event_test(game: Game, user: Any) -> None:
     path = PATHS[color]
     game.moves.all().delete()
     game.board = [None for _ in range(24)]
-    for point in path[:6]:
+    block_size = min(6, game.checker_count)
+    for point in path[:block_size]:
         game.board[point] = {"color": color, "count": 1}
-    game.board[path[10]] = {"color": color, "count": 9}
-    game.borne_off = {color: 0, opponent: 15}
+    remaining = game.checker_count - block_size
+    if remaining:
+        game.board[path[10]] = {"color": color, "count": remaining}
+    game.borne_off = {color: 0, opponent: game.checker_count}
     game.current_player = user
     game.dice = [1]
     game.remaining_moves = []
@@ -484,7 +494,7 @@ def validate_move(
         validate_block_rule(candidate, color)
         return {"action": GameMove.Action.MOVE, "target_point": target_point}
 
-    if not all_checkers_in_home(game.board, game.borne_off, color):
+    if not all_checkers_in_home(game.board, game.borne_off, color, game.checker_count):
         raise GameError("Выбрасывать шашки можно только когда все ваши шашки в доме.")
     if position < HOME_START:
         raise GameError("Эта шашка еще не в доме.")
@@ -756,6 +766,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "started_at": datetime_payload(game.started_at),
         "finished_at": datetime_payload(game.finished_at),
         "double_rolls": double_rolls_by_color(game),
+        "checker_count": game.checker_count,
         "board": game.board,
         "borne_off": game.borne_off,
         "dice": game.dice,
@@ -923,7 +934,7 @@ def apply_move(game: Game, user: Any, source_point: int, distance: int) -> None:
     if source_point == HEADS[color]:
         game.head_moves_this_turn += 1
 
-    if game.borne_off.get(color, 0) >= 15:
+    if game.borne_off.get(color, 0) >= game.checker_count:
         loser_color = opponent_color(color)
         victory_type = (
             Game.VictoryType.MARS

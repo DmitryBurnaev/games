@@ -14,6 +14,7 @@ from django.urls import reverse
 
 from .app_settings import (
     backgammon_animations_enabled,
+    backgammon_checker_count_presets,
     backgammon_debug_tools,
     backgammon_dice_mode,
     backgammon_notification_display_ms,
@@ -23,11 +24,13 @@ from .app_settings import (
 from .admin import AppSettingAdminForm
 from .models import (
     AppSetting,
+    BackgammonPlayerPreference,
     Game,
     GameMove,
     GameNotification,
     PlayerStats,
     QuickNotificationPreset,
+    initial_board_for_count,
 )
 from .realtime import game_group_name
 from .routing import websocket_urlpatterns
@@ -216,6 +219,25 @@ class AppSettingsTests(TestCase):
 
         self.assertTrue(backgammon_quick_notifications_enabled())
 
+    @override_settings(BACKGAMMON_CHECKER_COUNT_PRESETS=["3", "7"])
+    def test_checker_count_presets_include_standard_default(self) -> None:
+        """Checker-count presets come from settings and always include 15."""
+        AppSetting.objects.filter(
+            key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS
+        ).delete()
+
+        self.assertEqual(backgammon_checker_count_presets(), [3, 7, 15])
+
+    @override_settings(BACKGAMMON_CHECKER_COUNT_PRESETS=["3"])
+    def test_checker_count_presets_use_database_value(self) -> None:
+        """Enabled DB settings override the checker-count preset list."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
+            defaults={"value": "5, 10, 5, 99, nope", "is_enabled": True},
+        )
+
+        self.assertEqual(backgammon_checker_count_presets(), [5, 10, 15])
+
     def test_admin_form_shows_raw_setting_keys(self) -> None:
         """Admin key choices use the exact runtime setting names."""
         choices = dict(AppSettingAdminForm().fields["key"].choices)
@@ -294,6 +316,19 @@ class AppSettingsTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("value", form.errors)
 
+    def test_admin_form_validates_checker_count_presets(self) -> None:
+        """Checker-count presets must include usable integer choices."""
+        form = AppSettingAdminForm(
+            data={
+                "key": AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
+                "value": "20, nope",
+                "is_enabled": "on",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("value", form.errors)
+
     def test_admin_form_accepts_and_normalizes_valid_values(self) -> None:
         """Valid runtime setting values are cleaned before saving."""
         setting = AppSetting.objects.get(key=AppSetting.Key.BACKGAMMON_DEBUG_TOOLS)
@@ -308,6 +343,23 @@ class AppSettingsTests(TestCase):
 
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data["value"], "yes")
+
+    def test_admin_form_normalizes_checker_count_presets(self) -> None:
+        """Valid checker-count presets are deduplicated and keep the default."""
+        setting = AppSetting.objects.get(
+            key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS
+        )
+        form = AppSettingAdminForm(
+            instance=setting,
+            data={
+                "key": AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
+                "value": "5,10,5",
+                "is_enabled": "on",
+            },
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["value"], "5,10,15")
 
 
 @override_settings(
@@ -860,6 +912,23 @@ class GameRulesTests(TestCase):
         self.assertEqual(PlayerStats.objects.get(user=self.white).wins, 1)
         self.assertEqual(PlayerStats.objects.get(user=self.black).losses, 1)
 
+    def test_bear_off_uses_game_checker_count_for_victory(self) -> None:
+        """Short games finish when their configured checker count is borne off."""
+        game = self.active_game()
+        game.checker_count = 5
+        game.board = [None for _ in range(24)]
+        game.board[23] = {"color": Game.Color.WHITE, "count": 1}
+        game.borne_off = {Game.Color.WHITE: 4, Game.Color.BLACK: 0}
+        game.dice = [1]
+        game.remaining_moves = [1]
+        game.save()
+
+        apply_move(game, self.white, 23, 1)
+        game.refresh_from_db()
+
+        self.assertEqual(game.status, Game.Status.FINISHED)
+        self.assertEqual(game.borne_off[Game.Color.WHITE], 5)
+
     def test_undo_last_move_restores_checker_and_dice(self) -> None:
         """Undo restores the board, available dice move, and head counter."""
         game = self.active_game()
@@ -1339,6 +1408,86 @@ class GameLobbyTests(TestCase):
         )
         self.opponent = User.objects.create_user(username="opponent", password="pass")
         self.client.force_login(self.viewer)
+
+    def test_lobby_renders_game_setup_modal_with_user_defaults(self) -> None:
+        """The new-game modal is prefilled from user and runtime settings."""
+        BackgammonPlayerPreference.objects.create(
+            user=self.viewer,
+            default_checker_color=Game.Color.BLACK,
+        )
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
+            defaults={"value": "5,10", "is_enabled": True},
+        )
+
+        response = self.client.get(reverse("backgammon:game_list"))
+
+        self.assertContains(response, 'id="gameSetupModal"')
+        self.assertContains(response, 'value="black" checked')
+        self.assertContains(response, 'name="checker_count"')
+        self.assertContains(response, 'value="5"')
+        self.assertContains(response, 'value="10"')
+        self.assertContains(response, 'value="15" checked')
+
+    def test_create_game_uses_selected_color_and_checker_count(self) -> None:
+        """Posting setup choices creates a waiting game with the selected setup."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
+            defaults={"value": "5,15", "is_enabled": True},
+        )
+
+        response = self.client.post(
+            reverse("backgammon:create_game"),
+            {"color": Game.Color.BLACK, "checker_count": "5"},
+        )
+
+        game = Game.objects.get()
+        self.assertRedirects(
+            response, reverse("backgammon:game_detail", args=[game.pk])
+        )
+        self.assertIsNone(game.white_player)
+        self.assertEqual(game.black_player, self.viewer)
+        self.assertEqual(game.checker_count, 5)
+        self.assertEqual(game.board, initial_board_for_count(5))
+
+    @patch("backgammon.views.roll_die", side_effect=[6, 1])
+    def test_join_game_fills_open_white_seat_for_black_creator(
+        self, mocked_roll
+    ) -> None:
+        """A second player joins as white when the creator chose black."""
+        game = Game.objects.create(
+            black_player=self.viewer,
+            checker_count=5,
+            board=initial_board_for_count(5),
+        )
+        self.client.force_login(self.opponent)
+
+        response = self.client.post(reverse("backgammon:join_game", args=[game.pk]))
+        game.refresh_from_db()
+
+        self.assertRedirects(
+            response, reverse("backgammon:game_detail", args=[game.pk])
+        )
+        self.assertEqual(game.white_player, self.opponent)
+        self.assertEqual(game.black_player, self.viewer)
+        self.assertEqual(game.current_player, self.opponent)
+        self.assertEqual(game.status, Game.Status.ACTIVE)
+        mocked_roll.assert_called()
+
+    def test_create_game_rejects_unconfigured_checker_count(self) -> None:
+        """Game creation accepts only the configured checker-count presets."""
+        AppSetting.objects.update_or_create(
+            key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
+            defaults={"value": "5,15", "is_enabled": True},
+        )
+
+        response = self.client.post(
+            reverse("backgammon:create_game"),
+            {"color": Game.Color.WHITE, "checker_count": "10"},
+        )
+
+        self.assertRedirects(response, reverse("backgammon:game_list"))
+        self.assertFalse(Game.objects.exists())
 
     def test_lobby_shows_start_duration_and_winner_result(self) -> None:
         """Finished games show duration and color the winner relative to the viewer."""

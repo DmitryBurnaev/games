@@ -5,13 +5,15 @@ from collections.abc import Callable
 from django.conf import settings
 from django.db.utils import DatabaseError, OperationalError, ProgrammingError
 
-from .models import AppSetting
+from .models import AppSetting, DEFAULT_CHECKER_COUNT
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
 DICE_MODE_INDEPENDENT = "independent"
 DICE_MODE_PLAYER_BAG = "player_bag"
 DICE_MODES = {DICE_MODE_INDEPENDENT, DICE_MODE_PLAYER_BAG}
+MIN_CHECKER_COUNT = 1
+MAX_CHECKER_COUNT = 15
 
 
 def active_setting_value(key: AppSetting.Key) -> str | None:
@@ -70,6 +72,23 @@ def choice_setting(
     return normalized if normalized in choices else fallback()
 
 
+def checker_count_presets_from_value(value: str) -> list[int]:
+    """Parse configured checker-count presets while preserving their order."""
+    presets: list[int] = []
+    for item in value.split(","):
+        try:
+            count = int(item.strip())
+        except ValueError:
+            continue
+        if count < MIN_CHECKER_COUNT or count > MAX_CHECKER_COUNT:
+            continue
+        if count not in presets:
+            presets.append(count)
+    if DEFAULT_CHECKER_COUNT not in presets:
+        presets.append(DEFAULT_CHECKER_COUNT)
+    return presets
+
+
 def backgammon_debug_tools() -> bool:
     """Return whether debug helpers are enabled for backgammon."""
     return bool_setting(
@@ -119,3 +138,13 @@ def backgammon_notification_display_ms() -> int:
         lambda: settings.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
         min_value=1000,
     )
+
+
+def backgammon_checker_count_presets() -> list[int]:
+    """Return the configured checker-count choices for new games."""
+    value = active_setting_value(AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS)
+    if value is None:
+        value = ",".join(
+            str(item) for item in settings.BACKGAMMON_CHECKER_COUNT_PRESETS
+        )
+    return checker_count_presets_from_value(value) or [DEFAULT_CHECKER_COUNT]

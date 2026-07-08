@@ -300,6 +300,8 @@ Supported runtime keys:
 - `BACKGAMMON_ANIMATIONS_ENABLED`: enable or disable checker movement animations.
 - `BACKGAMMON_POLL_INTERVAL_MS`: polling fallback interval, clamped to at least
   `250` milliseconds.
+- `BACKGAMMON_CHECKER_COUNT_PRESETS`: comma-separated checker-count choices for
+  the game setup dialog; `15` is always available.
 
 Dice modes:
 
