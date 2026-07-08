@@ -34,6 +34,10 @@ class AppSetting(models.Model):
             "BACKGAMMON_NOTIFICATION_DISPLAY_MS",
             "Backgammon notification display ms",
         )
+        BACKGAMMON_CHECKER_COUNT_PRESETS = (
+            "BACKGAMMON_CHECKER_COUNT_PRESETS",
+            "Backgammon checker count presets",
+        )
 
     key = models.CharField(max_length=96, unique=True)
     value = models.TextField(blank=True)
@@ -55,12 +59,20 @@ class AppSetting(models.Model):
             raise ValidationError({"key": "Unknown application setting key."})
 
 
-def initial_board() -> Board:
+DEFAULT_CHECKER_COUNT = 15
+
+
+def initial_board_for_count(checker_count: int = DEFAULT_CHECKER_COUNT) -> Board:
     """Return the starting long-backgammon board layout."""
     board: Board = [None for _ in range(24)]
-    board[0] = {"color": Game.Color.WHITE, "count": 15}
-    board[12] = {"color": Game.Color.BLACK, "count": 15}
+    board[0] = {"color": Game.Color.WHITE, "count": checker_count}
+    board[12] = {"color": Game.Color.BLACK, "count": checker_count}
     return board
+
+
+def initial_board() -> Board:
+    """Return the standard 15-checker starting board."""
+    return initial_board_for_count()
 
 
 class Game(models.Model):
@@ -83,6 +95,8 @@ class Game(models.Model):
         settings.AUTH_USER_MODEL,
         related_name="white_backgammon_games",
         on_delete=models.CASCADE,
+        blank=True,
+        null=True,
     )
     black_player = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -107,6 +121,7 @@ class Game(models.Model):
     )
     status = models.CharField(max_length=16, choices=Status, default=Status.WAITING)
     victory_type = models.CharField(max_length=8, choices=VictoryType, blank=True)
+    checker_count = models.PositiveSmallIntegerField(default=DEFAULT_CHECKER_COUNT)
     board = models.JSONField(default=initial_board)
     borne_off = models.JSONField(default=dict)
     dice = models.JSONField(default=list, blank=True)
@@ -123,8 +138,9 @@ class Game(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
+        white = self.white_player.username if self.white_player else "waiting"
         black = self.black_player.username if self.black_player else "waiting"
-        return f"Game #{self.pk}: {self.white_player.username} vs {black}"
+        return f"Game #{self.pk}: {white} vs {black}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         """Ensure borne-off counters are initialized before saving."""
@@ -186,6 +202,28 @@ class GameMove(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_action_display()} in game #{self.game_id}"
+
+
+class BackgammonPlayerPreference(models.Model):
+    """User-level backgammon preferences managed through Django admin."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name="backgammon_preferences",
+        on_delete=models.CASCADE,
+    )
+    default_checker_color = models.CharField(
+        max_length=8,
+        choices=Game.Color,
+        default=Game.Color.WHITE,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["user__username"]
+
+    def __str__(self) -> str:
+        return f"Backgammon preferences for {self.user}"
 
 
 class QuickNotificationPreset(models.Model):

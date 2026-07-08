@@ -12,10 +12,51 @@
             </div>
         {% endif %}
     </div>
-    <form method="post" action="{% url 'backgammon:create_game' %}">
-        {% csrf_token %}
-        <button class="btn btn-primary" type="submit">Новая игра</button>
-    </form>
+    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#gameSetupModal">
+        Новая игра
+    </button>
+</div>
+
+<div class="modal fade" id="gameSetupModal" tabindex="-1" aria-labelledby="gameSetupModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="post" action="{% url 'backgammon:create_game' %}">
+            {% csrf_token %}
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="gameSetupModalLabel">Новая игра</h2>
+                <button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <fieldset class="mb-4">
+                    <legend class="h6">Цвет шашек</legend>
+                    <div class="btn-group w-100" role="group" aria-label="Цвет шашек">
+                        <input class="btn-check" type="radio" name="color" id="setup-color-white" value="white" {% if default_checker_color == "white" %}checked{% endif %}>
+                        <label class="btn btn-outline-dark" for="setup-color-white">
+                            <span class="checker-dot checker-white"></span>
+                            Белые
+                        </label>
+                        <input class="btn-check" type="radio" name="color" id="setup-color-black" value="black" {% if default_checker_color == "black" %}checked{% endif %}>
+                        <label class="btn btn-outline-dark" for="setup-color-black">
+                            <span class="checker-dot checker-black"></span>
+                            Чёрные
+                        </label>
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend class="h6">Количество шашек</legend>
+                    <div class="btn-group w-100" role="group" aria-label="Количество шашек">
+                        {% for checker_count in checker_count_presets %}
+                            <input class="btn-check" type="radio" name="checker_count" id="setup-checkers-{{ checker_count }}" value="{{ checker_count }}" {% if checker_count == default_checker_count %}checked{% endif %}>
+                            <label class="btn btn-outline-primary" for="setup-checkers-{{ checker_count }}">{{ checker_count }}</label>
+                        {% endfor %}
+                    </div>
+                </fieldset>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Отмена</button>
+                <button class="btn btn-primary" type="submit">Создать игру</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <div class="row g-4">
@@ -25,7 +66,7 @@
             {% for game in my_games %}
                 <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
                     <span class="d-flex flex-column gap-1">
-                        <span>#{{ game.pk }} · {{ game.white_player.get_full_name|default:game.white_player.username }} ⇆ {% if game.black_player %}{{ game.black_player.get_full_name|default:game.black_player.username }}{% else %}ожидание{% endif %}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
+                        <span>#{{ game.pk }} · {{ game.white_player_label }} ⇆ {{ game.black_player_label }}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
                         <span class="text-secondary small">
                             {{ game.started_at_label }} · ⌛ {{ game.duration_label }}
                         </span>
@@ -56,7 +97,7 @@
             {% for game in open_games %}
                 <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
                     <span class="d-flex flex-column gap-1">
-                        <span>#{{ game.pk }} · {{ game.white_player.get_full_name|default:game.white_player.username }}</span>
+                        <span>#{{ game.pk }} · {{ game.waiting_player_label }}</span>
                         <span class="text-secondary small">
                             {{ game.started_at_label }} · ⌛ {{ game.duration_label }}
                         </span>

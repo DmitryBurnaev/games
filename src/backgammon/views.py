@@ -19,12 +19,20 @@ from django.views.decorators.http import require_POST
 
 from .app_settings import (
     backgammon_animations_enabled,
+    backgammon_checker_count_presets,
     backgammon_debug_tools,
     backgammon_notification_display_ms,
     backgammon_poll_interval_ms,
     backgammon_quick_notifications_enabled,
 )
-from .models import Game, GameMove, PlayerStats
+from .models import (
+    DEFAULT_CHECKER_COUNT,
+    BackgammonPlayerPreference,
+    Game,
+    GameMove,
+    PlayerStats,
+    initial_board_for_count,
+)
 from .realtime import notify_game_updated
 from .services import (
     GameError,
@@ -72,6 +80,13 @@ def game_duration_label(duration: timedelta) -> str:
     return " ".join(parts)
 
 
+def user_display_name(user: Any | None) -> str:
+    """Return a compact human label for lobby rows."""
+    if not user:
+        return "ожидание"
+    return user.get_full_name() or user.username
+
+
 def effective_game_finished_at(game: Game, now: Any) -> Any:
     """Return the duration end point for the lobby."""
     if game.status == Game.Status.FINISHED and game.finished_at:
@@ -86,7 +101,22 @@ def decorate_lobby_game(game: Game, user: Any) -> Game:
     game.started_at_label = moscow_datetime_label(started_at)
     game.duration_label = game_duration_label(ended_at - started_at)
     game.winner_is_viewer = bool(game.winner_id and game.winner_id == user.id)
+    game.white_player_label = user_display_name(game.white_player)
+    game.black_player_label = user_display_name(game.black_player)
+    game.waiting_player_label = user_display_name(
+        game.white_player or game.black_player
+    )
     return game
+
+
+def default_checker_color_for(user: Any) -> str:
+    """Return the user's admin-managed default checker color."""
+    return (
+        BackgammonPlayerPreference.objects.filter(user=user)
+        .values_list("default_checker_color", flat=True)
+        .first()
+        or Game.Color.WHITE
+    )
 
 
 def signup(request: HttpRequest) -> HttpResponse:
@@ -117,25 +147,59 @@ def game_list(request: HttpRequest) -> HttpResponse:
             Q(white_player=request.user) | Q(black_player=request.user)
         )[:20]
     ]
+    open_games_query = games.filter(status=Game.Status.WAITING).exclude(
+        Q(white_player=request.user) | Q(black_player=request.user)
+    )
     open_games = [
-        decorate_lobby_game(game, request.user)
-        for game in games.filter(status=Game.Status.WAITING).exclude(
-            white_player=request.user
-        )[:20]
+        decorate_lobby_game(game, request.user) for game in open_games_query[:20]
     ]
     stats = PlayerStats.objects.filter(user=request.user).first()
+    checker_count_presets = backgammon_checker_count_presets()
     return render(
         request,
         "backgammon/game_list.html",
-        {"my_games": my_games, "open_games": open_games, "stats": stats},
+        {
+            "my_games": my_games,
+            "open_games": open_games,
+            "stats": stats,
+            "default_checker_color": default_checker_color_for(request.user),
+            "default_checker_count": DEFAULT_CHECKER_COUNT,
+            "checker_count_presets": checker_count_presets,
+        },
     )
 
 
 @login_required
 @require_POST
 def create_game(request: HttpRequest) -> HttpResponse:
-    """Create a waiting game with the current user as white."""
-    game = Game.objects.create(white_player=request.user)
+    """Create a waiting game with the selected setup options."""
+    color = request.POST.get("color", default_checker_color_for(request.user))
+    if color not in Game.Color.values:
+        messages.error(request, "Выберите корректный цвет шашек.")
+        return redirect("backgammon:game_list")
+
+    try:
+        checker_count = int(
+            request.POST.get("checker_count", str(DEFAULT_CHECKER_COUNT))
+        )
+    except ValueError:
+        messages.error(request, "Выберите корректное количество шашек.")
+        return redirect("backgammon:game_list")
+
+    if checker_count not in backgammon_checker_count_presets():
+        messages.error(request, "Выберите доступное количество шашек.")
+        return redirect("backgammon:game_list")
+
+    player_field = (
+        {"white_player": request.user}
+        if color == Game.Color.WHITE
+        else {"black_player": request.user}
+    )
+    game = Game.objects.create(
+        **player_field,
+        checker_count=checker_count,
+        board=initial_board_for_count(checker_count),
+    )
     messages.success(request, "Игра создана. Теперь нужен второй игрок.")
     return redirect("backgammon:game_detail", pk=game.pk)
 
@@ -178,24 +242,38 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
     """Seat the current user as black and choose the starting player."""
     with transaction.atomic():
         game = get_object_or_404(Game.objects.select_for_update(), pk=pk)
-        if game.status != Game.Status.WAITING or game.black_player:
+        if game.status != Game.Status.WAITING or (
+            game.white_player and game.black_player
+        ):
             messages.error(request, "К этой игре уже нельзя присоединиться.")
             return redirect("backgammon:game_detail", pk=game.pk)
-        if game.white_player_id == request.user.id:
+        if game.color_for(request.user):
             messages.error(request, "Нельзя играть против себя.")
+            return redirect("backgammon:game_detail", pk=game.pk)
+        if not game.white_player and not game.black_player:
+            messages.error(request, "К этой игре уже нельзя присоединиться.")
             return redirect("backgammon:game_detail", pk=game.pk)
 
         white_die = black_die = 0
         while white_die == black_die:
             white_die = roll_die()
             black_die = roll_die()
-        game.black_player = request.user
+        if game.white_player_id is None:
+            game.white_player = request.user
+        else:
+            game.black_player = request.user
         game.current_player = (
-            game.white_player if white_die > black_die else request.user
+            game.white_player if white_die > black_die else game.black_player
         )
         game.status = Game.Status.ACTIVE
         game.save(
-            update_fields=["black_player", "current_player", "status", "updated_at"]
+            update_fields=[
+                "white_player",
+                "black_player",
+                "current_player",
+                "status",
+                "updated_at",
+            ]
         )
         GameMove.objects.create(
             game=game,

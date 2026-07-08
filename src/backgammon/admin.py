@@ -2,9 +2,17 @@ from django import forms
 from django.contrib import admin
 from django.utils.safestring import mark_safe
 
-from .app_settings import DICE_MODES, FALSE_VALUES, TRUE_VALUES
+from .app_settings import (
+    DICE_MODES,
+    FALSE_VALUES,
+    MAX_CHECKER_COUNT,
+    MIN_CHECKER_COUNT,
+    TRUE_VALUES,
+    checker_count_presets_from_value,
+)
 from .models import (
     AppSetting,
+    BackgammonPlayerPreference,
     Game,
     GameMove,
     GameNotification,
@@ -26,7 +34,8 @@ APP_SETTING_VALUE_HELP = mark_safe(
     "BACKGAMMON_ANIMATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250<br>"
-    "BACKGAMMON_NOTIFICATION_DISPLAY_MS: integer milliseconds, minimum effective value is 1000"
+    "BACKGAMMON_NOTIFICATION_DISPLAY_MS: integer milliseconds, minimum effective value is 1000<br>"
+    "BACKGAMMON_CHECKER_COUNT_PRESETS: comma-separated integers from 1 to 15"
 )
 
 
@@ -79,6 +88,21 @@ class AppSettingAdminForm(forms.ModelForm):
                 )
             return str(parsed)
 
+        if key == AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS:
+            presets = checker_count_presets_from_value(value)
+            submitted_valid_presets = [
+                item
+                for item in value.split(",")
+                if item.strip().isdigit()
+                and MIN_CHECKER_COUNT <= int(item.strip()) <= MAX_CHECKER_COUNT
+            ]
+            if not submitted_valid_presets:
+                raise forms.ValidationError(
+                    f"Use comma-separated integers from {MIN_CHECKER_COUNT} "
+                    f"to {MAX_CHECKER_COUNT}."
+                )
+            return ",".join(str(count) for count in presets)
+
         return value
 
 
@@ -102,6 +126,7 @@ class GameAdmin(admin.ModelAdmin):
         "white_player",
         "black_player",
         "status",
+        "checker_count",
         "current_player",
         "winner",
         "victory_type",
@@ -115,6 +140,15 @@ class GameAdmin(admin.ModelAdmin):
         "winner__username",
     )
     readonly_fields = ("created_at", "updated_at", "started_at", "finished_at")
+
+
+@admin.register(BackgammonPlayerPreference)
+class BackgammonPlayerPreferenceAdmin(admin.ModelAdmin):
+    """Admin view for user-level backgammon defaults."""
+
+    list_display = ("user", "default_checker_color", "updated_at")
+    list_editable = ("default_checker_color",)
+    search_fields = ("user__username", "user__first_name", "user__last_name")
 
 
 @admin.register(GameMove)
