@@ -26,13 +26,13 @@ from .app_settings import (
     backgammon_quick_notifications_enabled,
 )
 from .models import (
-    DEFAULT_CHECKER_COUNT,
     BackgammonPlayerPreference,
     Game,
     GameMove,
     PlayerStats,
     initial_board_for_count,
 )
+from games.settings import DEFAULT_CHECKER_COUNT
 from .realtime import notify_game_updated
 from .services import (
     GameError,

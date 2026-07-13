@@ -5,7 +5,8 @@ from collections.abc import Callable
 from django.conf import settings
 from django.db.utils import DatabaseError, OperationalError, ProgrammingError
 
-from .models import AppSetting, DEFAULT_CHECKER_COUNT
+from .models import AppSetting
+from games.settings import DEFAULT_CHECKER_COUNT
 
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}

@@ -7,6 +7,8 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from games.settings import DEFAULT_CHECKER_COUNT
+
 BoardPoint = dict[str, Any] | None
 Board = list[BoardPoint]
 UserLike = Any
@@ -57,9 +59,6 @@ class AppSetting(models.Model):
         super().clean()
         if self.key not in self.Key.values:
             raise ValidationError({"key": "Unknown application setting key."})
-
-
-DEFAULT_CHECKER_COUNT = 15
 
 
 def initial_board_for_count(checker_count: int = DEFAULT_CHECKER_COUNT) -> Board:
