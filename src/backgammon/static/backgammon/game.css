@@ -307,7 +307,7 @@ body {
         repeating-linear-gradient(88deg, #b57a3d 0 18px, #c8914f 18px 35px, #9c642f 35px 54px);
     border: 10px solid #4f311b;
     border-radius: 8px;
-    padding: 1.05rem .42rem;
+    padding: .42rem .42rem;
     box-shadow:
         inset 0 0 0 2px rgba(255, 240, 197, .2),
         inset 0 0 38px rgba(38, 21, 10, .62),
@@ -322,7 +322,7 @@ body {
     bottom: 0;
     left: 50%;
     z-index: 4;
-    width: 16px;
+    width: 10px;
     transform: translateX(-50%);
     background:
         linear-gradient(90deg, rgba(255, 225, 155, .32), transparent 18%, transparent 82%, rgba(255, 225, 155, .24)),
@@ -341,7 +341,7 @@ body {
     top: calc(50% - 11px);
     left: 50%;
     z-index: 5;
-    width: 10px;
+    width: 5px;
     height: 22px;
     transform: translateX(-50%);
     border-radius: 4px;

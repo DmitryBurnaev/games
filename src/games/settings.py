@@ -9,6 +9,7 @@ https://docs.djangoproject.com/en/6.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
+from __future__ import annotations
 
 import os
 from pathlib import Path
@@ -72,7 +73,7 @@ BACKGAMMON_NOTIFICATION_DISPLAY_MS = env_int(
     "BACKGAMMON_NOTIFICATION_DISPLAY_MS", 4500, 1000
 )
 BACKGAMMON_CHECKER_COUNT_PRESETS = env_list(
-    "BACKGAMMON_CHECKER_COUNT_PRESETS", ["5", "10", "15"]
+    "BACKGAMMON_CHECKER_COUNT_PRESETS", ["10", "13", "15"]
 )
 ALLOW_USER_REGISTRATION = env_bool("ALLOW_USER_REGISTRATION", False)
 APP_VERSION = os.environ.get("APP_VERSION", "develop").strip() or "develop"
@@ -208,3 +209,4 @@ STORAGES = {
 
 LOGIN_REDIRECT_URL = "backgammon:game_list"
 LOGOUT_REDIRECT_URL = "login"
+DEFAULT_CHECKER_COUNT = 15

@@ -30,12 +30,12 @@
                     <legend class="h6">Цвет шашек</legend>
                     <div class="btn-group w-100" role="group" aria-label="Цвет шашек">
                         <input class="btn-check" type="radio" name="color" id="setup-color-white" value="white" {% if default_checker_color == "white" %}checked{% endif %}>
-                        <label class="btn btn-outline-dark" for="setup-color-white">
+                        <label class="btn btn-outline-secondary" for="setup-color-white">
                             <span class="checker-dot checker-white"></span>
                             Белые
                         </label>
                         <input class="btn-check" type="radio" name="color" id="setup-color-black" value="black" {% if default_checker_color == "black" %}checked{% endif %}>
-                        <label class="btn btn-outline-dark" for="setup-color-black">
+                        <label class="btn btn-outline-secondary" for="setup-color-black">
                             <span class="checker-dot checker-black"></span>
                             Чёрные
                         </label>
@@ -46,7 +46,7 @@
                     <div class="btn-group w-100" role="group" aria-label="Количество шашек">
                         {% for checker_count in checker_count_presets %}
                             <input class="btn-check" type="radio" name="checker_count" id="setup-checkers-{{ checker_count }}" value="{{ checker_count }}" {% if checker_count == default_checker_count %}checked{% endif %}>
-                            <label class="btn btn-outline-primary" for="setup-checkers-{{ checker_count }}">{{ checker_count }}</label>
+                            <label class="btn btn-outline-secondary" for="setup-checkers-{{ checker_count }}">{{ checker_count }}</label>
                         {% endfor %}
                     </div>
                 </fieldset>
