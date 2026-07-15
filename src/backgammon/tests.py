@@ -233,10 +233,10 @@ class AppSettingsTests(TestCase):
         """Enabled DB settings override the checker-count preset list."""
         AppSetting.objects.update_or_create(
             key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
-            defaults={"value": "5, 10, 5, 99, nope", "is_enabled": True},
+            defaults={"value": "5, 10, 20, 21, nope", "is_enabled": True},
         )
 
-        self.assertEqual(backgammon_checker_count_presets(), [5, 10, 15])
+        self.assertEqual(backgammon_checker_count_presets(), [5, 10, 20, 15])
 
     def test_admin_form_shows_raw_setting_keys(self) -> None:
         """Admin key choices use the exact runtime setting names."""
@@ -321,7 +321,7 @@ class AppSettingsTests(TestCase):
         form = AppSettingAdminForm(
             data={
                 "key": AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
-                "value": "20, nope",
+                "value": "21, nope",
                 "is_enabled": "on",
             }
         )
@@ -353,13 +353,13 @@ class AppSettingsTests(TestCase):
             instance=setting,
             data={
                 "key": AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
-                "value": "5,10,5",
+                "value": "5,20,5",
                 "is_enabled": "on",
             },
         )
 
         self.assertTrue(form.is_valid(), form.errors)
-        self.assertEqual(form.cleaned_data["value"], "5,10,15")
+        self.assertEqual(form.cleaned_data["value"], "5,20,15")
 
 
 @override_settings(

@@ -14,7 +14,7 @@ DICE_MODE_INDEPENDENT = "independent"
 DICE_MODE_PLAYER_BAG = "player_bag"
 DICE_MODES = {DICE_MODE_INDEPENDENT, DICE_MODE_PLAYER_BAG}
 MIN_CHECKER_COUNT = 1
-MAX_CHECKER_COUNT = 15
+MAX_CHECKER_COUNT = 20
 
 
 def active_setting_value(key: AppSetting.Key) -> str | None:
