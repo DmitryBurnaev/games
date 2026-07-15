@@ -35,7 +35,7 @@ APP_SETTING_VALUE_HELP = mark_safe(
     "BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250<br>"
     "BACKGAMMON_NOTIFICATION_DISPLAY_MS: integer milliseconds, minimum effective value is 1000<br>"
-    "BACKGAMMON_CHECKER_COUNT_PRESETS: comma-separated integers from 1 to 15"
+    "BACKGAMMON_CHECKER_COUNT_PRESETS: comma-separated integers from 1 to 20"
 )
 
 

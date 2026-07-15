@@ -141,7 +141,7 @@ Runtime variables are defined in `.env.template`.
 | `BACKGAMMON_DICE_MODE`             | No                     | `independent`                           | Dice generation mode: `independent` or `player_bag`.                        |
 | `BACKGAMMON_ANIMATIONS_ENABLED`    | No                     | `true`                                  | Enables checker movement animations in the board UI.                        |
 | `BACKGAMMON_POLL_INTERVAL_MS`      | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
-| `BACKGAMMON_CHECKER_COUNT_PRESETS` | No                     | `10,13,15`                              | Comma-separated checker-count choices for the new-game setup dialog.        |
+| `BACKGAMMON_CHECKER_COUNT_PRESETS` | No                     | `10,13,15,20`                           | Comma-separated checker-count choices for the new-game setup dialog.        |
 | `ALLOW_USER_REGISTRATION`          | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.     |
 | `SQLITE_PATH`                      | Yes for Docker/prod    | `/app/.data/db.sqlite3` in template     | SQLite database path inside the container.                                  |
 
@@ -165,7 +165,7 @@ BACKGAMMON_DEBUG_TOOLS=false
 BACKGAMMON_DICE_MODE=independent
 BACKGAMMON_ANIMATIONS_ENABLED=true
 BACKGAMMON_POLL_INTERVAL_MS=1000
-BACKGAMMON_CHECKER_COUNT_PRESETS=5,10,15
+BACKGAMMON_CHECKER_COUNT_PRESETS=5,10,15,20
 ALLOW_USER_REGISTRATION=false
 
 SQLITE_PATH=/app/.data/db.sqlite3
@@ -191,7 +191,7 @@ Available setting keys:
 | `BACKGAMMON_DICE_MODE`             | `independent`, `player_bag`                         | Selects dice generation mode for player rolls.                                     |
 | `BACKGAMMON_ANIMATIONS_ENABLED`    | `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` | Enables or disables checker movement animations.                                   |
 | `BACKGAMMON_POLL_INTERVAL_MS`      | `250`, `750`, `1000`, `2000`                        | Browser polling interval in milliseconds; values below `250` are clamped to `250`. |
-| `BACKGAMMON_CHECKER_COUNT_PRESETS` | `5,13,15`, `3,5,15`                                 | Checker-count choices in the game setup dialog; `15` is always available.          |
+| `BACKGAMMON_CHECKER_COUNT_PRESETS` | `5,13,20`, `3,5,15`                                 | Checker-count choices from `1` to `20` in the setup dialog; `15` is always available. |
 
 Dice modes:
 

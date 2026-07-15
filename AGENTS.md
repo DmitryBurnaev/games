@@ -301,7 +301,7 @@ Supported runtime keys:
 - `BACKGAMMON_POLL_INTERVAL_MS`: polling fallback interval, clamped to at least
   `250` milliseconds.
 - `BACKGAMMON_CHECKER_COUNT_PRESETS`: comma-separated checker-count choices for
-  the game setup dialog; `15` is always available.
+  the game setup dialog, from `1` to `20`; `15` is always available.
 
 Dice modes:
 
