@@ -274,6 +274,10 @@ body {
     margin-bottom: .65rem;
 }
 
+.finished-stats-panel dl + .finished-stats-title {
+    margin-top: 1rem;
+}
+
 .finished-stats-panel dl {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
