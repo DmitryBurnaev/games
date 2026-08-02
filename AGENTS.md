@@ -338,6 +338,9 @@ browser JavaScript.
 For layout or interaction changes, verify the affected local page in a browser.
 Check both a regular desktop layout and a narrow layout when side-panel height or
 board responsiveness may be affected.
+Treat browser verification as required for every repository enhancement or bug fix
+that affects user-visible behavior; do not consider automated checks alone
+sufficient when the affected page can be run locally.
 
 For Docker, deployment, Channels, Redis, or entrypoint changes, also run the
 relevant Compose path:

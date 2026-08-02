@@ -1213,12 +1213,41 @@ class GameRulesTests(TestCase):
             action=GameMove.Action.ROLL,
             dice=[3, 3],
         )
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.MOVE,
+            dice=[6, 6, 6, 6],
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.MOVE,
+            dice=[6, 6, 6],
+        )
 
         payload = serialize_game(game, self.white)
 
         self.assertEqual(payload["started_at"], "2026-05-03T10:05:00+00:00")
         self.assertEqual(payload["finished_at"], "2026-05-03T11:23:00+00:00")
         self.assertEqual(payload["double_rolls"], {"white": 1, "black": 1})
+        self.assertEqual(
+            payload["dice_statistics"],
+            {
+                "white": {
+                    "total_points": 15,
+                    "double_rolls": 1,
+                    "double_moves_used": 2,
+                    "double_moves_available": 4,
+                },
+                "black": {
+                    "total_points": 6,
+                    "double_rolls": 1,
+                    "double_moves_used": 0,
+                    "double_moves_available": 4,
+                },
+            },
+        )
         self.assertEqual(payload["white_player"]["display_name"], "White Player")
         self.assertEqual(payload["black_player"]["display_name"], "black")
 
@@ -1541,6 +1570,7 @@ class GameLobbyTests(TestCase):
         self.assertNotContains(response, "03.05.2026 10:05")
         self.assertNotContains(response, "🗓️")
         self.assertContains(response, "⌛ 1 час 18 мин")
+        self.assertContains(response, "🎲 15 фишек")
         self.assertNotContains(response, "дубли:")
         self.assertContains(response, "Vera Viewer ⇆ opponent")
         self.assertContains(response, "Vera Viewer ⇆ opponent 🌚")
