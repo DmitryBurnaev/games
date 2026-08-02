@@ -1256,8 +1256,11 @@
         }
         const start = gameStartIso();
         const finish = game.finished_at;
-        const whiteDoubles = game.double_rolls ? game.double_rolls.white || 0 : 0;
-        const blackDoubles = game.double_rolls ? game.double_rolls.black || 0 : 0;
+        const whiteDiceStats = game.dice_statistics ? game.dice_statistics.white || {} : {};
+        const blackDiceStats = game.dice_statistics ? game.dice_statistics.black || {} : {};
+        const whiteDoubles = whiteDiceStats.double_rolls || (game.double_rolls ? game.double_rolls.white || 0 : 0);
+        const blackDoubles = blackDiceStats.double_rolls || (game.double_rolls ? game.double_rolls.black || 0 : 0);
+        const doubleUsageLabel = (statistics) => `${statistics.double_moves_used || 0} из ${statistics.double_moves_available || 0} ходов`;
         const whiteOffCount = game.borne_off && typeof game.borne_off.white === 'number' ? game.borne_off.white : 0;
         const blackOffCount = game.borne_off && typeof game.borne_off.black === 'number' ? game.borne_off.black : 0;
         finishedStatsPanel.innerHTML = `
@@ -1269,8 +1272,12 @@
                 <dd>${moscowDateTimeLabel(start)}</dd>
                 <dt>🏁 Финиш</dt>
                 <dd>${moscowDateTimeLabel(finish)}</dd>
+                <dt>🎲 Сумма очков</dt>
+                <dd>${playerName(game.white_player)}: ${whiteDiceStats.total_points || 0} · ${playerName(game.black_player)}: ${blackDiceStats.total_points || 0}</dd>
                 <dt>🎲 Дубли</dt>
                 <dd>${playerName(game.white_player)}: ${whiteDoubles} · ${playerName(game.black_player)}: ${blackDoubles}</dd>
+                <dt>↗️ Использовано из дублей</dt>
+                <dd>${playerName(game.white_player)}: ${doubleUsageLabel(whiteDiceStats)} · ${playerName(game.black_player)}: ${doubleUsageLabel(blackDiceStats)}</dd>
                 <dt>📤 Выведено</dt>
                 <dd>${playerName(game.white_player)}: ${whiteOffCount} · ${playerName(game.black_player)}: ${blackOffCount}</dd>
             </dl>

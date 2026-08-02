@@ -115,18 +115,48 @@ def datetime_payload(value: Any) -> str | None:
     return value.isoformat() if value else None
 
 
-def double_rolls_by_color(game: Game) -> dict[str, int]:
-    """Return double-roll counts grouped by checker color."""
-    counts = {Game.Color.WHITE: 0, Game.Color.BLACK: 0}
-    for move in game.moves.filter(action=GameMove.Action.ROLL).select_related("player"):
+def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
+    """Return rolled points and double usage grouped by checker color."""
+    statistics = {
+        color: {
+            "total_points": 0,
+            "double_rolls": 0,
+            "double_moves_used": 0,
+            "double_moves_available": 0,
+        }
+        for color in Game.Color.values
+    }
+    moves = game.moves.select_related("player")
+    for move in moves.filter(action=GameMove.Action.ROLL):
         if not isinstance(move.dice, list) or len(move.dice) != 2:
             continue
-        if move.dice[0] != move.dice[1]:
+        if not all(isinstance(die, int) for die in move.dice):
+            continue
+        color = game.color_for(move.player)
+        if not color:
+            continue
+        statistics[color]["total_points"] += sum(move.dice)
+        if move.dice[0] == move.dice[1]:
+            statistics[color]["double_rolls"] += 1
+            statistics[color]["double_moves_available"] += 4
+
+    for move in moves.filter(
+        action__in=[GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
+    ):
+        if not isinstance(move.dice, list) or not move.dice:
+            continue
+        if not all(isinstance(die, int) and die == move.dice[0] for die in move.dice):
             continue
         color = game.color_for(move.player)
         if color:
-            counts[color] += 1
-    return counts
+            statistics[color]["double_moves_used"] += 1
+    return statistics
+
+
+def double_rolls_by_color(game: Game) -> dict[str, int]:
+    """Return double-roll counts grouped by checker color."""
+    statistics = dice_statistics_by_color(game)
+    return {color: statistics[color]["double_rolls"] for color in Game.Color.values}
 
 
 def path_position(color: Game.Color, point: int) -> int:
@@ -744,6 +774,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     """Serialize a game into the JSON shape consumed by the browser UI."""
     viewer_color = game.color_for(viewer)
     viewer_moves = legal_moves(game, viewer)
+    dice_statistics = dice_statistics_by_color(game)
     viewer_blocking_event = (
         game.status == Game.Status.ACTIVE
         and game.current_player_id == viewer.id
@@ -765,7 +796,10 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "updated_at": datetime_payload(game.updated_at),
         "started_at": datetime_payload(game.started_at),
         "finished_at": datetime_payload(game.finished_at),
-        "double_rolls": double_rolls_by_color(game),
+        "double_rolls": {
+            color: dice_statistics[color]["double_rolls"] for color in Game.Color.values
+        },
+        "dice_statistics": dice_statistics,
         "checker_count": game.checker_count,
         "board": game.board,
         "borne_off": game.borne_off,
