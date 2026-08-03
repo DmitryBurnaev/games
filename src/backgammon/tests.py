@@ -593,15 +593,16 @@ class GameNotificationTests(TestCase):
             reverse("backgammon:game_detail", args=[self.game.pk])
         )
 
-        self.assertContains(response, 'title="Have a good game! 🎲"')
+        self.assertContains(response, 'aria-describedby="quick-notification-tooltip-1"')
+        self.assertContains(response, 'role="tooltip">Have a good game! 🎲</span>')
         self.assertContains(
             response,
-            'title="And then they’ll write: it was a duplicate 📝"',
+            'role="tooltip">And then they’ll write: it was a duplicate 📝</span>',
         )
-        self.assertContains(response, 'title="Interesting move 🤔"')
-        self.assertContains(response, ">🎲</button>")
-        self.assertContains(response, ">📝</button>")
-        self.assertContains(response, ">🤔</button>")
+        self.assertContains(response, 'role="tooltip">Interesting move 🤔</span>')
+        self.assertContains(response, ">🎲<span")
+        self.assertContains(response, ">📝<span")
+        self.assertContains(response, ">🤔<span")
 
     def test_notification_controls_follow_admin_sort_order(self) -> None:
         """The configured sort order controls button placement."""
@@ -616,8 +617,8 @@ class GameNotificationTests(TestCase):
         content = response.content.decode()
 
         self.assertLess(
-            content.index('title="Interesting move 🤔"'),
-            content.index('title="Congratulations! 🎉"'),
+            content.index('role="tooltip">Interesting move 🤔</span>'),
+            content.index('role="tooltip">Congratulations! 🎉</span>'),
         )
 
     def test_deleted_notification_preset_cannot_be_sent(self) -> None:
