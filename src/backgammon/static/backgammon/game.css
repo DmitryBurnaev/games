@@ -195,17 +195,14 @@ body {
 }
 
 .quick-notification-actions {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    z-index: 30;
+    position: fixed;
+    top: 5rem;
+    right: 1rem;
+    z-index: 1040;
     display: flex;
-    flex-wrap: nowrap;
-    justify-content: flex-end;
+    flex-direction: column;
+    align-items: flex-end;
     gap: .5rem;
-    width: max-content;
-    max-width: 100%;
-    pointer-events: none;
 }
 
 .quick-notification-actions.d-none {
@@ -223,13 +220,40 @@ body {
     box-shadow: 0 8px 22px rgba(43, 28, 15, .16);
     font-size: 1.1rem;
     line-height: 1;
-    pointer-events: auto;
+    position: relative;
 }
 
 .quick-notification-button:hover,
 .quick-notification-button:focus-visible {
     background: #fff8df;
     border-color: rgba(179, 92, 36, .5);
+}
+
+.quick-notification-tooltip {
+    position: absolute;
+    top: 50%;
+    right: calc(100% + .6rem);
+    z-index: 1;
+    width: max-content;
+    max-width: min(320px, calc(100vw - 6rem));
+    padding: .45rem .65rem;
+    transform: translateY(-50%);
+    border-radius: 6px;
+    background: rgba(43, 28, 15, .94);
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.25;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s ease;
+    visibility: hidden;
+}
+
+.quick-notification-button:hover .quick-notification-tooltip,
+.quick-notification-button:focus-visible .quick-notification-tooltip {
+    opacity: 1;
+    visibility: visible;
 }
 
 .quick-notification-toast {
@@ -701,15 +725,25 @@ body {
     }
 
     .quick-notification-actions {
-        right: 0;
-        bottom: 0;
-        max-width: 100%;
+        top: auto;
+        right: .75rem;
+        bottom: .75rem;
+        flex-direction: row;
+        max-width: calc(100vw - 1.5rem);
+        transform: none;
     }
 
     .quick-notification-button {
         width: 36px;
         height: 36px;
         font-size: 1rem;
+    }
+
+    .quick-notification-tooltip {
+        top: auto;
+        right: 0;
+        bottom: calc(100% + .6rem);
+        transform: none;
     }
 
     .off-board {

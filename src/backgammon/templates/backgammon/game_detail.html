@@ -95,25 +95,26 @@
                 <div>Выведено белых: <strong id="white-off">0</strong></div>
                 <div>Выведено черных: <strong id="black-off">0</strong></div>
             </div>
-            {% if quick_notifications_enabled %}
-                <div id="quick-notification-actions" class="quick-notification-actions{% if game.status != 'active' %} d-none{% endif %}" aria-label="Быстрые уведомления">
-                    {% for notification in quick_notification_options %}
-                        <button
-                            class="btn btn-light quick-notification-button"
-                            type="button"
-                            data-notification-text="{{ notification.text }}"
-                            aria-label="{{ notification.text }}"
-                            title="{{ notification.text }}"
-                        >{{ notification.emoji }}</button>
-                    {% endfor %}
-                </div>
-            {% endif %}
         </section>
     </div>
+
+    {% if quick_notifications_enabled %}
+        <div id="quick-notification-actions" class="quick-notification-actions{% if game.status != 'active' %} d-none{% endif %}" aria-label="Быстрые уведомления">
+            {% for notification in quick_notification_options %}
+                <button
+                    class="btn btn-light quick-notification-button"
+                    type="button"
+                    data-notification-text="{{ notification.text }}"
+                    aria-label="{{ notification.text }}"
+                    aria-describedby="quick-notification-tooltip-{{ forloop.counter }}"
+                >{{ notification.emoji }}<span id="quick-notification-tooltip-{{ forloop.counter }}" class="quick-notification-tooltip" role="tooltip">{{ notification.text }}</span></button>
+            {% endfor %}
+        </div>
+    {% endif %}
 
     <div id="quick-notification-toast" class="quick-notification-toast" role="status" aria-live="polite"></div>
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=58"></script>
+<script src="{% static 'backgammon/game.js' %}?v=59"></script>
 {% endblock %}
