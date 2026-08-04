@@ -90,11 +90,11 @@
         </aside>
 
         <section class="board-wrap">
-            <div id="board" class="board" aria-label="Игровая доска"></div>
-            <div id="off-board" class="off-board{% if game.status == 'finished' %} d-none{% endif %}">
-                <div>Выведено белых: <strong id="white-off">0</strong></div>
-                <div>Выведено черных: <strong id="black-off">0</strong></div>
+            <div id="off-board" class="off-board" aria-label="Выведенные шашки">
+                <div id="black-off-checker" class="checker black off-board-checker" aria-label="Выведено черных"><span id="black-off">0</span></div>
+                <div id="white-off-checker" class="checker white off-board-checker" aria-label="Выведено белых"><span id="white-off">0</span></div>
             </div>
+            <div id="board" class="board" aria-label="Игровая доска"></div>
         </section>
     </div>
 
@@ -116,5 +116,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=59"></script>
+<script src="{% static 'backgammon/game.js' %}?v=60"></script>
 {% endblock %}

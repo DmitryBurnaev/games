@@ -33,15 +33,13 @@ body {
     display: grid;
     grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
     gap: 1.25rem;
-    align-items: start;
+    align-items: stretch;
 }
 
 .game-side {
     background: #fff;
     border: 1px solid #ded7ca;
     border-radius: 8px;
-    height: 100%;
-    min-height: 100%;
     padding: 1rem;
     position: relative;
     transition: background-color .25s ease, border-color .25s ease, box-shadow .25s ease;
@@ -667,14 +665,21 @@ body {
 }
 
 .off-board {
+    position: absolute;
+    right: -3rem;
+    bottom: 1rem;
+    z-index: 1040;
     display: flex;
+    flex-direction: column;
     flex-wrap: nowrap;
-    gap: 1rem;
-    min-height: 38px;
-    margin-top: .75rem;
-    padding-right: clamp(390px, 42%, 650px);
+    gap: .4rem;
     align-items: center;
-    color: #574638;
+    pointer-events: none;
+}
+
+.off-board-checker {
+    width: 33px;
+    max-width: none;
 }
 
 .domovoy-pop {
@@ -747,8 +752,11 @@ body {
     }
 
     .off-board {
-        min-height: 84px;
-        padding-right: 0;
-        padding-bottom: 46px;
+        right: .75rem;
+        bottom: 4rem;
+    }
+
+    .off-board-checker {
+        width: 33px;
     }
 }

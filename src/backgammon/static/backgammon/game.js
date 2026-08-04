@@ -58,9 +58,10 @@
     const domovoyImage = document.getElementById('domovoy-image');
     const whitePlayer = document.getElementById('white-player');
     const blackPlayer = document.getElementById('black-player');
-    const offBoard = document.getElementById('off-board');
     const whiteOff = document.getElementById('white-off');
     const blackOff = document.getElementById('black-off');
+    const whiteOffChecker = document.getElementById('white-off-checker');
+    const blackOffChecker = document.getElementById('black-off-checker');
 
     let game = null;
     let selectedSource = null;
@@ -636,8 +637,8 @@
         const snapshot = {
             points: {},
             off: {
-                white: rectPayload(whiteOff),
-                black: rectPayload(blackOff),
+                white: rectPayload(whiteOffChecker),
+                black: rectPayload(blackOffChecker),
             },
         };
         boardEl.querySelectorAll('.point').forEach((point) => {
@@ -798,7 +799,9 @@
     function takeArrivalChecker(transition) {
         if (transition.target === null) {
             return {
-                rect: rectPayload(transition.color === 'white' ? whiteOff : blackOff),
+                rect: rectPayload(
+                    transition.color === 'white' ? whiteOffChecker : blackOffChecker,
+                ),
                 element: null,
             };
         }
@@ -1341,7 +1344,6 @@
         remainingRow.textContent = remainingLabels.length ? `Осталось: ${remainingLabels.join(', ')}` : '';
         whiteOff.textContent = game.borne_off.white || 0;
         blackOff.textContent = game.borne_off.black || 0;
-        offBoard.classList.toggle('d-none', game.status === 'finished');
         controlPanel.classList.toggle('d-none', game.status !== 'active');
         rollButton.disabled = !game.can_roll || diceAnimating;
         undoButton.disabled = !game.can_undo || diceAnimating;
