@@ -1657,6 +1657,20 @@ class GameDebugToolsTests(TestCase):
 
         self.assertContains(response, 'data-animations-enabled="0"')
 
+    def test_game_detail_renders_borne_off_checker_counters(self) -> None:
+        """Borne-off totals are rendered on checker-shaped board controls."""
+        response = self.client.get(
+            reverse("backgammon:game_detail", kwargs={"pk": self.game.pk})
+        )
+
+        self.assertContains(response, 'id="off-board" class="off-board"')
+        self.assertContains(
+            response, 'id="black-off-checker" class="checker black off-board-checker"'
+        )
+        self.assertContains(
+            response, 'id="white-off-checker" class="checker white off-board-checker"'
+        )
+
     @override_settings(BACKGAMMON_POLL_INTERVAL_MS=750)
     def test_poll_interval_setting_renders_for_frontend(self) -> None:
         """The frontend receives the configured state polling interval."""
