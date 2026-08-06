@@ -1261,9 +1261,8 @@
         const finish = game.finished_at;
         const whiteDiceStats = game.dice_statistics ? game.dice_statistics.white || {} : {};
         const blackDiceStats = game.dice_statistics ? game.dice_statistics.black || {} : {};
+        const skippedTurns = game.skipped_turns || {};
         const doubleStatisticsLabel = (statistics) => `${statistics.double_rolls || 0} / <span class="text-secondary">исп. ${statistics.double_moves_used || 0} из ${statistics.double_moves_available || 0}</span>`;
-        const whiteOffCount = game.borne_off && typeof game.borne_off.white === 'number' ? game.borne_off.white : 0;
-        const blackOffCount = game.borne_off && typeof game.borne_off.black === 'number' ? game.borne_off.black : 0;
         finishedStatsPanel.innerHTML = `
             <div class="finished-stats-title">Статистика игры</div>
             <dl class="small">
@@ -1275,8 +1274,8 @@
                 <dd>${moscowDateTimeLabel(finish)}</dd>
                 <dt>🎲 Сумма очков</dt>
                 <dd>${playerName(game.white_player)}: ${whiteDiceStats.total_points || 0} · ${playerName(game.black_player)}: ${blackDiceStats.total_points || 0}</dd>
-                <dt>📤 Выведено</dt>
-                <dd>${playerName(game.white_player)}: ${whiteOffCount} · ${playerName(game.black_player)}: ${blackOffCount}</dd>
+                <dt>⏭️ Пропущено</dt>
+                <dd>${playerName(game.white_player)}: ${skippedTurns.black || 0} · ${playerName(game.black_player)}: ${skippedTurns.white || 0}</dd>
             </dl>
             <div class="finished-stats-title">Статистика</div>
             <dl class="small">

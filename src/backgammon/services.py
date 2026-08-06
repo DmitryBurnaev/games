@@ -153,6 +153,30 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     return statistics
 
 
+def skipped_turns_by_color(game: Game) -> dict[str, int]:
+    """Return turns ended without a checker move, grouped by rolling color."""
+    skipped_turns = {color: 0 for color in Game.Color.values}
+    current_roll = None
+    made_checker_move = False
+
+    for move in game.moves.order_by("created_at", "pk"):
+        if move.action == GameMove.Action.ROLL:
+            if current_roll and not made_checker_move:
+                color = game.color_for(current_roll.player)
+                if color:
+                    skipped_turns[color] += 1
+            current_roll = move
+            made_checker_move = False
+        elif (
+            current_roll
+            and move.player_id == current_roll.player_id
+            and move.action in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
+        ):
+            made_checker_move = True
+
+    return skipped_turns
+
+
 def double_rolls_by_color(game: Game) -> dict[str, int]:
     """Return double-roll counts grouped by checker color."""
     statistics = dice_statistics_by_color(game)
@@ -775,6 +799,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     viewer_color = game.color_for(viewer)
     viewer_moves = legal_moves(game, viewer)
     dice_statistics = dice_statistics_by_color(game)
+    skipped_turns = skipped_turns_by_color(game)
     viewer_blocking_event = (
         game.status == Game.Status.ACTIVE
         and game.current_player_id == viewer.id
@@ -800,6 +825,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
             color: dice_statistics[color]["double_rolls"] for color in Game.Color.values
         },
         "dice_statistics": dice_statistics,
+        "skipped_turns": skipped_turns,
         "checker_count": game.checker_count,
         "board": game.board,
         "borne_off": game.borne_off,

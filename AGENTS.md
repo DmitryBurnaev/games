@@ -231,6 +231,7 @@ Destination selection:
 
 Visual style:
 
+- Keep interface wording concise; prefer the shortest clear label.
 - Wooden board with a vertical center divider.
 - Point numbering is hidden during ordinary play and shown only with debug tools.
 - Checkers are volumetric, checker-like discs.
