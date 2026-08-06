@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timezone as datetime_timezone
+from pathlib import Path
 from unittest.mock import patch
 
 from asgiref.sync import async_to_sync
@@ -1251,6 +1252,41 @@ class GameRulesTests(TestCase):
         )
         self.assertEqual(payload["white_player"]["display_name"], "White Player")
         self.assertEqual(payload["black_player"]["display_name"], "black")
+
+    def test_serialized_game_counts_skipped_turns_without_moves(self) -> None:
+        """Skipped turns are rolls followed by another roll without a checker move."""
+        game = self.active_game()
+        for player, action in [
+            (self.white, GameMove.Action.ROLL),
+            (self.black, GameMove.Action.ROLL),
+            (self.white, GameMove.Action.ROLL),
+            (self.black, GameMove.Action.ROLL),
+            (self.black, GameMove.Action.MOVE),
+            (self.white, GameMove.Action.ROLL),
+            (self.black, GameMove.Action.FINISH),
+        ]:
+            GameMove.objects.create(
+                game=game,
+                player=player,
+                action=action,
+                dice=[1, 2] if action == GameMove.Action.ROLL else [],
+            )
+
+        payload = serialize_game(game, self.white)
+
+        self.assertEqual(payload["skipped_turns"], {"white": 2, "black": 1})
+
+    def test_finished_stats_show_opponent_skipped_turns_not_borne_off_totals(
+        self,
+    ) -> None:
+        """The finished-game UI keeps borne-off totals on the board only."""
+        script = Path(__file__).with_name("static") / "backgammon" / "game.js"
+        source = script.read_text()
+
+        self.assertIn("Пропущено", source)
+        self.assertIn("skippedTurns.black", source)
+        self.assertIn("skippedTurns.white", source)
+        self.assertNotIn("📤 Выведено", source)
 
     def test_move_markers_count_multiple_checkers_on_same_point(self) -> None:
         """Markers count multiple moved checkers landing on one point."""
