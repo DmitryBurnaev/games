@@ -41,6 +41,7 @@ from .services import (
     arrange_blocking_event_test,
     arrange_checkers_for_victory_test,
     arrange_checkers_in_home,
+    arrange_final_double_test,
     create_roll,
     finish_blocked_turn,
     roll_dice_from_player_bag,
@@ -1256,25 +1257,51 @@ class GameRulesTests(TestCase):
     def test_serialized_game_counts_skipped_turns_without_moves(self) -> None:
         """Skipped turns are rolls followed by another roll without a checker move."""
         game = self.active_game()
-        for player, action in [
-            (self.white, GameMove.Action.ROLL),
-            (self.black, GameMove.Action.ROLL),
-            (self.white, GameMove.Action.ROLL),
-            (self.black, GameMove.Action.ROLL),
-            (self.black, GameMove.Action.MOVE),
-            (self.white, GameMove.Action.ROLL),
-            (self.black, GameMove.Action.FINISH),
+        for player, action, dice in [
+            (self.white, GameMove.Action.ROLL, [3, 3]),
+            (self.black, GameMove.Action.ROLL, [1, 2]),
+            (self.white, GameMove.Action.ROLL, [1, 2]),
+            (self.black, GameMove.Action.ROLL, [1, 2]),
+            (self.black, GameMove.Action.MOVE, []),
+            (self.white, GameMove.Action.ROLL, [1, 2]),
+            (self.black, GameMove.Action.FINISH, []),
         ]:
             GameMove.objects.create(
                 game=game,
                 player=player,
                 action=action,
-                dice=[1, 2] if action == GameMove.Action.ROLL else [],
+                dice=dice,
             )
 
         payload = serialize_game(game, self.white)
 
         self.assertEqual(payload["skipped_turns"], {"white": 2, "black": 1})
+        self.assertEqual(payload["skipped_moves"], {"white": 6, "black": 2})
+        self.assertEqual(payload["skipped_points"], {"white": 9, "black": 3})
+
+    def test_final_double_roll_is_excluded_from_dice_statistics(self) -> None:
+        """A winning double does not count as skipped dice moves or points."""
+        game = self.active_game()
+        arrange_final_double_test(game, self.white)
+
+        apply_move(game, self.white, 22, 4)
+        game.refresh_from_db()
+
+        payload = serialize_game(game, self.white)
+
+        self.assertEqual(game.status, Game.Status.FINISHED)
+        self.assertEqual(
+            payload["dice_statistics"]["white"],
+            {
+                "total_points": 0,
+                "double_rolls": 0,
+                "double_moves_used": 0,
+                "double_moves_available": 0,
+            },
+        )
+        self.assertEqual(payload["skipped_turns"], {"white": 0, "black": 0})
+        self.assertEqual(payload["skipped_moves"], {"white": 0, "black": 0})
+        self.assertEqual(payload["skipped_points"], {"white": 0, "black": 0})
 
     def test_finished_stats_show_opponent_skipped_turns_not_borne_off_totals(
         self,
@@ -1283,9 +1310,12 @@ class GameRulesTests(TestCase):
         script = Path(__file__).with_name("static") / "backgammon" / "game.js"
         source = script.read_text()
 
-        self.assertIn("Пропущено", source)
+        self.assertIn("Пропуск (${playerName(game.white_player)})", source)
+        self.assertIn("Пропуск (${playerName(game.black_player)})", source)
         self.assertIn("skippedTurns.black", source)
         self.assertIn("skippedTurns.white", source)
+        self.assertIn("skippedPoints.black", source)
+        self.assertIn("skippedPoints.white", source)
         self.assertNotIn("📤 Выведено", source)
 
     def test_move_markers_count_multiple_checkers_on_same_point(self) -> None:
@@ -1667,13 +1697,30 @@ class GameDebugToolsTests(TestCase):
 
         self.assertContains(response, "В дом для теста")
         self.assertContains(response, "Тест победы")
+        self.assertContains(response, "Тест финального дубля")
         self.assertContains(response, "Тест головы 5/5")
         self.assertContains(response, "Тест блока 6")
         self.assertContains(response, "👈")
         self.assertContains(response, 'data-debug-tools="1"')
         self.assertContains(response, "data-prepare-bear-off-url")
+        self.assertContains(response, "data-prepare-final-double-url")
         self.assertContains(response, "data-prepare-extra-head-move-url")
         self.assertContains(response, "data-prepare-blocking-event-url")
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_final_double_debug_helper_prepares_winning_roll(self) -> None:
+        """The final-double helper leaves one checker for a 4/4 bear-off."""
+        response = self.client.post(
+            reverse("backgammon:prepare_final_double", kwargs={"pk": self.game.pk})
+        )
+        self.game.refresh_from_db()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(self.game.dice, [4, 4])
+        self.assertEqual(self.game.remaining_moves, [4, 4, 4, 4])
+        self.assertEqual(self.game.borne_off[Game.Color.WHITE], 14)
+        self.assertEqual(self.game.board[22], {"color": Game.Color.WHITE, "count": 1})
 
     @override_settings(BACKGAMMON_ANIMATIONS_ENABLED=True)
     def test_animation_flag_renders_when_enabled(self) -> None:
@@ -1804,10 +1851,12 @@ class GameDebugToolsTests(TestCase):
 
         self.assertNotContains(detail_response, "В дом для теста")
         self.assertNotContains(detail_response, "Тест победы")
+        self.assertNotContains(detail_response, "Тест финального дубля")
         self.assertNotContains(detail_response, "Тест головы 5/5")
         self.assertNotContains(detail_response, "Тест блока 6")
         self.assertContains(detail_response, 'data-debug-tools="0"')
         self.assertNotContains(detail_response, "data-prepare-bear-off-url")
+        self.assertNotContains(detail_response, "data-prepare-final-double-url")
         self.assertNotContains(detail_response, "data-prepare-extra-head-move-url")
         self.assertNotContains(detail_response, "data-prepare-blocking-event-url")
         self.assertEqual(endpoint_response.status_code, 403)

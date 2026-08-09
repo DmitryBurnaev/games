@@ -115,6 +115,29 @@ def datetime_payload(value: Any) -> str | None:
     return value.isoformat() if value else None
 
 
+def terminal_roll_for_statistics(game: Game) -> GameMove | None:
+    """Return the winning roll, which is excluded from finished-game statistics."""
+    if game.status != Game.Status.FINISHED:
+        return None
+
+    finish = (
+        game.moves.filter(action=GameMove.Action.FINISH)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if not finish or not finish.dice:
+        return None
+    return (
+        game.moves.filter(
+            action=GameMove.Action.ROLL,
+            player=finish.player,
+            pk__lt=finish.pk,
+        )
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+
+
 def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     """Return rolled points and double usage grouped by checker color."""
     statistics = {
@@ -127,7 +150,10 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
         for color in Game.Color.values
     }
     moves = game.moves.select_related("player")
+    terminal_roll = terminal_roll_for_statistics(game)
     for move in moves.filter(action=GameMove.Action.ROLL):
+        if terminal_roll and move.pk == terminal_roll.pk:
+            continue
         if not isinstance(move.dice, list) or len(move.dice) != 2:
             continue
         if not all(isinstance(die, int) for die in move.dice):
@@ -143,6 +169,8 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     for move in moves.filter(
         action__in=[GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
     ):
+        if terminal_roll and move.pk > terminal_roll.pk:
+            continue
         if not isinstance(move.dice, list) or not move.dice:
             continue
         if not all(isinstance(die, int) and die == move.dice[0] for die in move.dice):
@@ -153,18 +181,29 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     return statistics
 
 
-def skipped_turns_by_color(game: Game) -> dict[str, int]:
-    """Return turns ended without a checker move, grouped by rolling color."""
-    skipped_turns = {color: 0 for color in Game.Color.values}
+def skipped_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
+    """Return skipped turns, dice moves, and points grouped by rolling color."""
+    statistics = {
+        color: {"turns": 0, "moves": 0, "points": 0} for color in Game.Color.values
+    }
     current_roll = None
     made_checker_move = False
 
+    def count_skipped_roll(roll: GameMove | None) -> None:
+        if not roll or made_checker_move:
+            return
+        color = game.color_for(roll.player)
+        if not color or not isinstance(roll.dice, list) or len(roll.dice) != 2:
+            return
+        if not all(isinstance(die, int) for die in roll.dice):
+            return
+        statistics[color]["turns"] += 1
+        statistics[color]["points"] += sum(roll.dice)
+        statistics[color]["moves"] += 4 if roll.dice[0] == roll.dice[1] else 2
+
     for move in game.moves.order_by("created_at", "pk"):
         if move.action == GameMove.Action.ROLL:
-            if current_roll and not made_checker_move:
-                color = game.color_for(current_roll.player)
-                if color:
-                    skipped_turns[color] += 1
+            count_skipped_roll(current_roll)
             current_roll = move
             made_checker_move = False
         elif (
@@ -174,7 +213,13 @@ def skipped_turns_by_color(game: Game) -> dict[str, int]:
         ):
             made_checker_move = True
 
-    return skipped_turns
+    return statistics
+
+
+def skipped_turns_by_color(game: Game) -> dict[str, int]:
+    """Return skipped-turn counts grouped by rolling color."""
+    statistics = skipped_statistics_by_color(game)
+    return {color: statistics[color]["turns"] for color in Game.Color.values}
 
 
 def double_rolls_by_color(game: Game) -> dict[str, int]:
@@ -413,6 +458,37 @@ def arrange_checkers_for_victory_test(game: Game, user: Any) -> None:
     game.has_rolled = False
     game.head_moves_this_turn = 0
     game.save()
+
+
+def arrange_final_double_test(game: Game, user: Any) -> None:
+    """Prepare one checker for a winning 4/4 bear-off statistics test."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError(
+            "Тест финального дубля можно подготовить только в активной игре."
+        )
+
+    color = game.color_for(user)
+    if not color:
+        raise GameError("Вы не участвуете в этой игре.")
+
+    game.moves.all().delete()
+    remove_color_from_board(game.board, color)
+    game.borne_off[color] = game.checker_count - 1
+    add_checker(game.board, PATHS[color][22], color)
+    game.current_player = user
+    game.dice = [4, 4]
+    game.remaining_moves = [4, 4, 4, 4]
+    game.has_rolled = True
+    game.head_moves_this_turn = 0
+    game.started_at = timezone.now()
+    game.save()
+    GameMove.objects.create(
+        game=game,
+        player=user,
+        action=GameMove.Action.ROLL,
+        dice=game.dice,
+        board=game.board,
+    )
 
 
 def arrange_extra_head_move_test(game: Game, user: Any) -> None:
@@ -799,7 +875,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     viewer_color = game.color_for(viewer)
     viewer_moves = legal_moves(game, viewer)
     dice_statistics = dice_statistics_by_color(game)
-    skipped_turns = skipped_turns_by_color(game)
+    skipped_statistics = skipped_statistics_by_color(game)
     viewer_blocking_event = (
         game.status == Game.Status.ACTIVE
         and game.current_player_id == viewer.id
@@ -825,7 +901,15 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
             color: dice_statistics[color]["double_rolls"] for color in Game.Color.values
         },
         "dice_statistics": dice_statistics,
-        "skipped_turns": skipped_turns,
+        "skipped_turns": {
+            color: skipped_statistics[color]["turns"] for color in Game.Color.values
+        },
+        "skipped_moves": {
+            color: skipped_statistics[color]["moves"] for color in Game.Color.values
+        },
+        "skipped_points": {
+            color: skipped_statistics[color]["points"] for color in Game.Color.values
+        },
         "checker_count": game.checker_count,
         "board": game.board,
         "borne_off": game.borne_off,
