@@ -31,7 +31,7 @@ body {
 
 .game-shell {
     display: grid;
-    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
     gap: 1.25rem;
     align-items: stretch;
 }
@@ -302,7 +302,7 @@ body {
 
 .finished-stats-panel dl {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+    grid-template-columns: 10.5rem minmax(0, 1fr);
     gap: .4rem .75rem;
     margin: 0;
 }
@@ -314,6 +314,7 @@ body {
 
 .finished-stats-panel dd {
     margin: 0;
+    white-space: nowrap;
 }
 
 .board-wrap {
@@ -627,6 +628,10 @@ body {
     will-change: transform;
 }
 
+.moving-checker-wrap.bearing-off-checker-wrap {
+    z-index: 1050;
+}
+
 .checker.moving-checker {
     width: 100%;
     max-width: none;
@@ -666,19 +671,19 @@ body {
 
 .off-board {
     position: absolute;
-    right: -3rem;
-    bottom: 1rem;
+    right: -2.8rem;
+    top: 16px;
     z-index: 1040;
     display: flex;
     flex-direction: column;
     flex-wrap: nowrap;
-    gap: .4rem;
+    gap: .1rem;
     align-items: center;
     pointer-events: none;
 }
 
 .off-board-checker {
-    width: 33px;
+    width: 36px;
     max-width: none;
 }
 
@@ -753,10 +758,11 @@ body {
 
     .off-board {
         right: .75rem;
-        bottom: 4rem;
+        top: .75rem;
+        bottom: auto;
     }
 
     .off-board-checker {
-        width: 33px;
+        width: 36px;
     }
 }

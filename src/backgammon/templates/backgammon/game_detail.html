@@ -23,6 +23,7 @@
     {% if debug_game_tools %}
     data-prepare-bear-off-url="{% url 'backgammon:prepare_bear_off' game.pk %}"
     data-prepare-victory-url="{% url 'backgammon:prepare_victory' game.pk %}"
+    data-prepare-final-double-url="{% url 'backgammon:prepare_final_double' game.pk %}"
     data-prepare-extra-head-move-url="{% url 'backgammon:prepare_extra_head_move' game.pk %}"
     data-prepare-blocking-event-url="{% url 'backgammon:prepare_blocking_event' game.pk %}"
     {% endif %}
@@ -74,6 +75,7 @@
                 {% if debug_game_tools %}
                     <button id="prepare-bear-off-button" class="btn btn-outline-info btn-sm" type="button">В дом для теста</button>
                     <button id="prepare-victory-button" class="btn btn-outline-success btn-sm" type="button">Тест победы</button>
+                    <button id="prepare-final-double-button" class="btn btn-outline-success btn-sm" type="button">Тест финального дубля</button>
                     <button id="prepare-extra-head-move-button" class="btn btn-outline-dark btn-sm" type="button">Тест головы 5/5</button>
                     <button id="prepare-blocking-event-button" class="btn btn-outline-danger btn-sm" type="button">Тест блока 6</button>
                 {% endif %}
@@ -116,5 +118,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=62"></script>
+<script src="{% static 'backgammon/game.js' %}?v=67"></script>
 {% endblock %}

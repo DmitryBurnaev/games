@@ -14,6 +14,7 @@
     const endTurnUrl = app.dataset.endTurnUrl;
     const prepareBearOffUrl = app.dataset.prepareBearOffUrl;
     const prepareVictoryUrl = app.dataset.prepareVictoryUrl;
+    const prepareFinalDoubleUrl = app.dataset.prepareFinalDoubleUrl;
     const prepareExtraHeadMoveUrl = app.dataset.prepareExtraHeadMoveUrl;
     const prepareBlockingEventUrl = app.dataset.prepareBlockingEventUrl;
     const debugGameTools = app.dataset.debugTools === '1';
@@ -48,6 +49,7 @@
     const quickNotificationButtons = Array.from(document.querySelectorAll('.quick-notification-button'));
     const prepareBearOffButton = document.getElementById('prepare-bear-off-button');
     const prepareVictoryButton = document.getElementById('prepare-victory-button');
+    const prepareFinalDoubleButton = document.getElementById('prepare-final-double-button');
     const prepareExtraHeadMoveButton = document.getElementById('prepare-extra-head-move-button');
     const prepareBlockingEventButton = document.getElementById('prepare-blocking-event-button');
     const waitingForOpponentAlerts = Array.from(document.querySelectorAll('.alert'))
@@ -887,15 +889,18 @@
 
             const wrapper = document.createElement('span');
             const checker = document.createElement('span');
+            const isBearingOff = transition.target === null;
             checker.className = `${movingCheckerClass(start.className, transition.color)} moving-checker`;
             checker.textContent = start.text || '';
-            wrapper.className = 'moving-checker-wrap';
+            wrapper.className = `moving-checker-wrap${isBearingOff ? ' bearing-off-checker-wrap' : ''}`;
             wrapper.style.left = `${start.rect.left}px`;
             wrapper.style.top = `${start.rect.top}px`;
             wrapper.style.width = `${start.rect.width}px`;
             wrapper.style.height = `${start.rect.height}px`;
             wrapper.style.transitionDuration = `${timing.duration}ms`;
-            const arcHeight = (timing.speed === 'opponent' ? 1 : -1) * (moveArcPx[timing.speed] || moveArcPx.opponent);
+            const arcHeight = isBearingOff
+                ? -(moveArcPx[timing.speed] || moveArcPx.opponent)
+                : (timing.speed === 'opponent' ? 1 : -1) * (moveArcPx[timing.speed] || moveArcPx.opponent);
             checker.style.setProperty('--move-arc-height', `${arcHeight}px`);
             checker.style.width = `${start.rect.width}px`;
             checker.style.height = `${start.rect.height}px`;
@@ -1262,9 +1267,10 @@
         const whiteDiceStats = game.dice_statistics ? game.dice_statistics.white || {} : {};
         const blackDiceStats = game.dice_statistics ? game.dice_statistics.black || {} : {};
         const skippedTurns = game.skipped_turns || {};
+        const skippedPoints = game.skipped_points || {};
         const doubleStatisticsLabel = (statistics) => `${statistics.double_rolls || 0} / <span class="text-secondary">исп. ${statistics.double_moves_used || 0} из ${statistics.double_moves_available || 0}</span>`;
         finishedStatsPanel.innerHTML = `
-            <div class="finished-stats-title">Статистика игры</div>
+            <div class="finished-stats-title">Итоги</div>
             <dl class="small">
                 <dt>⌛ Время</dt>
                 <dd>${durationLabel(start, finish)}</dd>
@@ -1274,8 +1280,6 @@
                 <dd>${moscowDateTimeLabel(finish)}</dd>
                 <dt>🎲 Сумма очков</dt>
                 <dd>${playerName(game.white_player)}: ${whiteDiceStats.total_points || 0} · ${playerName(game.black_player)}: ${blackDiceStats.total_points || 0}</dd>
-                <dt>⏭️ Пропущено</dt>
-                <dd>${playerName(game.white_player)}: ${skippedTurns.black || 0} · ${playerName(game.black_player)}: ${skippedTurns.white || 0}</dd>
             </dl>
             <div class="finished-stats-title">Статистика</div>
             <dl class="small">
@@ -1283,6 +1287,10 @@
                 <dd>${doubleStatisticsLabel(whiteDiceStats)}</dd>
                 <dt>Дубли (${playerName(game.black_player)})</dt>
                 <dd>${doubleStatisticsLabel(blackDiceStats)}</dd>
+                <dt>Пропуск (${playerName(game.white_player)})</dt>
+                <dd>${skippedTurns.white || 0} / <span class="text-secondary">очков: ${skippedPoints.white || 0}</span></dd>
+                <dt>Пропуск (${playerName(game.black_player)})</dt>
+                <dd>${skippedTurns.black || 0} / <span class="text-secondary">очков: ${skippedPoints.black || 0}</span></dd>
             </dl>
         `;
     }
@@ -1363,6 +1371,9 @@
         }
         if (prepareVictoryButton) {
             prepareVictoryButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
+        }
+        if (prepareFinalDoubleButton) {
+            prepareFinalDoubleButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
         }
         if (prepareExtraHeadMoveButton) {
             prepareExtraHeadMoveButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
@@ -1493,6 +1504,20 @@
             try {
                 showError('');
                 const nextGame = await requestJson(prepareVictoryUrl, { method: 'POST' });
+                selectedSource = null;
+                receiveGameState(nextGame, 'own');
+                lastDiceKey = JSON.stringify(game.dice || []);
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+    }
+
+    if (debugGameTools && prepareFinalDoubleButton) {
+        prepareFinalDoubleButton.addEventListener('click', async () => {
+            try {
+                showError('');
+                const nextGame = await requestJson(prepareFinalDoubleUrl, { method: 'POST' });
                 selectedSource = null;
                 receiveGameState(nextGame, 'own');
                 lastDiceKey = JSON.stringify(game.dice || []);

@@ -30,6 +30,11 @@ urlpatterns = [
         name="prepare_victory",
     ),
     path(
+        "games/<int:pk>/prepare-final-double/",
+        views.prepare_final_double,
+        name="prepare_final_double",
+    ),
+    path(
         "games/<int:pk>/prepare-extra-head-move/",
         views.prepare_extra_head_move,
         name="prepare_extra_head_move",

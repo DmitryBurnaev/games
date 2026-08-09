@@ -40,6 +40,7 @@ from .services import (
     arrange_blocking_event_test,
     arrange_checkers_for_victory_test,
     arrange_extra_head_move_test,
+    arrange_final_double_test,
     arrange_checkers_in_home,
     create_roll,
     create_quick_notification,
@@ -434,6 +435,24 @@ def prepare_victory(request: HttpRequest, pk: int) -> JsonResponse:
         with transaction.atomic():
             game = get_participant_game(pk, request.user, for_update=True)
             arrange_checkers_for_victory_test(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def prepare_final_double(request: HttpRequest, pk: int) -> JsonResponse:
+    """Prepare a final double roll for statistics testing."""
+    if not backgammon_debug_tools():
+        return json_error("Отладочные игровые инструменты выключены.", status=403)
+    try:
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            arrange_final_double_test(game, request.user)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
             queue_game_update(game.pk)
