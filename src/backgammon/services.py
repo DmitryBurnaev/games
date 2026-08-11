@@ -182,42 +182,49 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
 
 
 def skipped_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
-    """Return skipped turns, dice moves, and points grouped by rolling color."""
+    """Return unspent dice moves and points grouped by rolling color."""
     statistics = {
         color: {"turns": 0, "moves": 0, "points": 0} for color in Game.Color.values
     }
     current_roll = None
-    made_checker_move = False
+    used_distances: list[int] = []
 
-    def count_skipped_roll(roll: GameMove | None) -> None:
-        if not roll or made_checker_move:
+    def count_unspent_dice(roll: GameMove | None) -> None:
+        if not roll:
             return
         color = game.color_for(roll.player)
         if not color or not isinstance(roll.dice, list) or len(roll.dice) != 2:
             return
         if not all(isinstance(die, int) for die in roll.dice):
             return
-        statistics[color]["turns"] += 1
-        statistics[color]["points"] += sum(roll.dice)
-        statistics[color]["moves"] += 4 if roll.dice[0] == roll.dice[1] else 2
+        available_dice = (
+            [roll.dice[0]] * 4 if roll.dice[0] == roll.dice[1] else roll.dice[:]
+        )
+        for distance in used_distances:
+            if distance in available_dice:
+                available_dice.remove(distance)
+        statistics[color]["turns"] += len(available_dice)
+        statistics[color]["moves"] += len(available_dice)
+        statistics[color]["points"] += sum(available_dice)
 
     for move in game.moves.order_by("created_at", "pk"):
         if move.action == GameMove.Action.ROLL:
-            count_skipped_roll(current_roll)
+            count_unspent_dice(current_roll)
             current_roll = move
-            made_checker_move = False
+            used_distances = []
         elif (
             current_roll
             and move.player_id == current_roll.player_id
             and move.action in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
+            and isinstance(move.distance, int)
         ):
-            made_checker_move = True
+            used_distances.append(move.distance)
 
     return statistics
 
 
 def skipped_turns_by_color(game: Game) -> dict[str, int]:
-    """Return skipped-turn counts grouped by rolling color."""
+    """Return unspent dice-move counts grouped by rolling color."""
     statistics = skipped_statistics_by_color(game)
     return {color: statistics[color]["turns"] for color in Game.Color.values}
 

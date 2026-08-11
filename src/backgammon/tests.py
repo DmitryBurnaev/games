@@ -1254,8 +1254,8 @@ class GameRulesTests(TestCase):
         self.assertEqual(payload["white_player"]["display_name"], "White Player")
         self.assertEqual(payload["black_player"]["display_name"], "black")
 
-    def test_serialized_game_counts_skipped_turns_without_moves(self) -> None:
-        """Skipped turns are rolls followed by another roll without a checker move."""
+    def test_serialized_game_counts_unspent_dice_moves_and_points(self) -> None:
+        """Every unused die contributes one skipped move and its dice points."""
         game = self.active_game()
         for player, action, dice in [
             (self.white, GameMove.Action.ROLL, [3, 3]),
@@ -1271,13 +1271,42 @@ class GameRulesTests(TestCase):
                 player=player,
                 action=action,
                 dice=dice,
+                distance=1 if action == GameMove.Action.MOVE else None,
             )
 
         payload = serialize_game(game, self.white)
 
-        self.assertEqual(payload["skipped_turns"], {"white": 2, "black": 1})
-        self.assertEqual(payload["skipped_moves"], {"white": 6, "black": 2})
-        self.assertEqual(payload["skipped_points"], {"white": 9, "black": 3})
+        self.assertEqual(payload["skipped_turns"], {"white": 6, "black": 3})
+        self.assertEqual(payload["skipped_moves"], {"white": 6, "black": 3})
+        self.assertEqual(payload["skipped_points"], {"white": 15, "black": 5})
+
+    def test_serialized_game_counts_unspent_double_dice_moves(self) -> None:
+        """A partially used double leaves each remaining die as a skipped move."""
+        game = self.active_game()
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.ROLL,
+            dice=[6, 6],
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.white,
+            action=GameMove.Action.MOVE,
+            dice=[6, 6],
+            distance=6,
+        )
+        GameMove.objects.create(
+            game=game,
+            player=self.black,
+            action=GameMove.Action.ROLL,
+            dice=[1, 2],
+        )
+
+        payload = serialize_game(game, self.white)
+
+        self.assertEqual(payload["skipped_turns"], {"white": 3, "black": 0})
+        self.assertEqual(payload["skipped_points"], {"white": 18, "black": 0})
 
     def test_final_double_roll_is_excluded_from_dice_statistics(self) -> None:
         """A winning double does not count as skipped dice moves or points."""
