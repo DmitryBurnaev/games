@@ -282,6 +282,23 @@ Important rule details implemented:
 - Bearing off is allowed only when all player checkers are in home.
 - Win type is `mars` if opponent has borne off zero checkers, otherwise `oin`.
 
+## Skipped-Dice Statistics
+
+Finished-game statistics derive skipped dice from `GameMove` history; no game-state
+field is stored for them.
+
+- A "skipped move" is one unspent die, not a whole player turn.
+- A regular roll provides two dice moves. Every unspent die adds one skipped move
+  and its face value to skipped points.
+- A double provides four dice moves. For example, after a `6/6` roll where only
+  one six is used, the player has three skipped moves and 18 skipped points.
+- A turn spans from its `ROLL` event to the next `ROLL` event. `MOVE` and
+  `BEAR_OFF` distances consume matching dice; the remaining dice form the skipped
+  statistics.
+- The winning roll and every die from it are excluded from skipped statistics,
+  total-points statistics, and double usage statistics, even when the player did
+  not consume every die before winning.
+
 ## Runtime Game Settings
 
 Backgammon behavior can be changed through environment-backed Django settings and,
