@@ -227,6 +227,8 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
         "backgammon/game_detail.html",
         {
             "game": game,
+            "can_join_game": game.status == Game.Status.WAITING
+            and not game.color_for(request.user),
             "debug_game_tools": backgammon_debug_tools(),
             "animations_enabled": backgammon_animations_enabled(),
             "poll_interval_ms": backgammon_poll_interval_ms(),

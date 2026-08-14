@@ -1599,6 +1599,35 @@ class GameLobbyTests(TestCase):
         self.assertEqual(game.status, Game.Status.ACTIVE)
         mocked_roll.assert_called()
 
+    def test_waiting_game_detail_hides_join_button_for_creator_of_either_color(
+        self,
+    ) -> None:
+        """Waiting-game creators cannot join themselves regardless of their color."""
+        for player_field in ("white_player", "black_player"):
+            with self.subTest(player_field=player_field):
+                game = Game.objects.create(**{player_field: self.viewer})
+
+                response = self.client.get(
+                    reverse("backgammon:game_detail", args=[game.pk])
+                )
+
+                self.assertNotContains(response, "Присоединиться")
+
+    def test_waiting_game_detail_shows_join_button_to_other_user_for_either_color(
+        self,
+    ) -> None:
+        """A non-participant can join a waiting game with either open seat."""
+        self.client.force_login(self.opponent)
+        for player_field in ("white_player", "black_player"):
+            with self.subTest(player_field=player_field):
+                game = Game.objects.create(**{player_field: self.viewer})
+
+                response = self.client.get(
+                    reverse("backgammon:game_detail", args=[game.pk])
+                )
+
+                self.assertContains(response, "Присоединиться")
+
     def test_create_game_rejects_unconfigured_checker_count(self) -> None:
         """Game creation accepts only the configured checker-count presets."""
         AppSetting.objects.update_or_create(
