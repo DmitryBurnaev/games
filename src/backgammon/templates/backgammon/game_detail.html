@@ -42,7 +42,7 @@
                 <a class="btn btn-outline-secondary btn-sm" href="{% url 'backgammon:game_list' %}">К списку</a>
             </div>
 
-            {% if game.status == 'waiting' and game.white_player != user %}
+            {% if can_join_game %}
                 <form method="post" action="{% url 'backgammon:join_game' game.pk %}" class="mb-3">
                     {% csrf_token %}
                     <button class="btn btn-primary w-100" type="submit">Присоединиться</button>
