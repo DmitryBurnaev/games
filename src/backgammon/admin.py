@@ -123,6 +123,7 @@ class GameAdmin(admin.ModelAdmin):
 
     list_display = (
         "id",
+        "party_number",
         "white_player",
         "black_player",
         "status",

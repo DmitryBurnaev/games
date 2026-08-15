@@ -1,4 +1,5 @@
 import json
+from importlib import import_module
 from datetime import datetime, timezone as datetime_timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +10,7 @@ from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.apps import apps as django_apps
 from django.forms import modelform_factory
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
@@ -1574,6 +1576,7 @@ class GameLobbyTests(TestCase):
         self.assertEqual(game.black_player, self.viewer)
         self.assertEqual(game.checker_count, 5)
         self.assertEqual(game.board, initial_board_for_count(5))
+        self.assertIsNone(game.party_number)
 
     @patch("backgammon.views.roll_die", side_effect=[6, 1])
     def test_join_game_fills_open_white_seat_for_black_creator(
@@ -1597,7 +1600,90 @@ class GameLobbyTests(TestCase):
         self.assertEqual(game.black_player, self.viewer)
         self.assertEqual(game.current_player, self.opponent)
         self.assertEqual(game.status, Game.Status.ACTIVE)
+        self.assertEqual(game.party_number, 1)
         mocked_roll.assert_called()
+
+    @patch("backgammon.views.roll_die", side_effect=[6, 1, 5, 2, 4, 3])
+    def test_join_numbers_games_by_unordered_player_pair(self, mocked_roll) -> None:
+        """Party numbers ignore colors and checker-count choices."""
+        first_game = Game.objects.create(white_player=self.viewer)
+        self.client.force_login(self.opponent)
+        self.client.post(reverse("backgammon:join_game", args=[first_game.pk]))
+        first_game.refresh_from_db()
+
+        second_game = Game.objects.create(
+            black_player=self.opponent,
+            checker_count=5,
+            board=initial_board_for_count(5),
+        )
+        self.client.force_login(self.viewer)
+        self.client.post(reverse("backgammon:join_game", args=[second_game.pk]))
+        second_game.refresh_from_db()
+
+        User = get_user_model()
+        another_opponent = User.objects.create_user(
+            username="another-opponent", password="pass"
+        )
+        third_game = Game.objects.create(white_player=self.viewer)
+        self.client.force_login(another_opponent)
+        self.client.post(reverse("backgammon:join_game", args=[third_game.pk]))
+        third_game.refresh_from_db()
+
+        self.assertEqual(first_game.party_number, 1)
+        self.assertEqual(second_game.party_number, 2)
+        self.assertEqual(third_game.party_number, 1)
+        self.assertEqual(mocked_roll.call_count, 6)
+
+    def test_game_detail_displays_party_number_not_database_id(self) -> None:
+        """The visible game label is the head-to-head party number."""
+        game = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            party_number=7,
+            status=Game.Status.ACTIVE,
+        )
+
+        response = self.client.get(reverse("backgammon:game_detail", args=[game.pk]))
+
+        self.assertContains(response, "Игра №7")
+        self.assertNotContains(response, f"Игра #{game.pk}")
+
+    def test_party_number_backfill_groups_pairs_and_orders_by_creation_time(
+        self,
+    ) -> None:
+        """The migration assigns consecutive numbers to each unordered pair."""
+        User = get_user_model()
+        third_player = User.objects.create_user(username="third", password="pass")
+        first = Game.objects.create(
+            white_player=self.opponent,
+            black_player=self.viewer,
+            status=Game.Status.ACTIVE,
+        )
+        second = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            status=Game.Status.ACTIVE,
+        )
+        different_pair = Game.objects.create(
+            white_player=self.viewer,
+            black_player=third_player,
+            status=Game.Status.ACTIVE,
+        )
+        waiting = Game.objects.create(white_player=self.viewer)
+        created_at = datetime(2026, 1, 1, tzinfo=datetime_timezone.utc)
+        Game.objects.filter(pk=first.pk).update(created_at=created_at)
+        Game.objects.filter(pk=second.pk).update(created_at=created_at)
+        Game.objects.filter(pk=different_pair.pk).update(created_at=created_at)
+
+        migration = import_module("backgammon.migrations.0008_game_party_number")
+        migration.backfill_party_numbers(django_apps, None)
+        for game in (first, second, different_pair, waiting):
+            game.refresh_from_db()
+
+        self.assertEqual(first.party_number, 1)
+        self.assertEqual(second.party_number, 2)
+        self.assertEqual(different_pair.party_number, 1)
+        self.assertIsNone(waiting.party_number)
 
     def test_waiting_game_detail_hides_join_button_for_creator_of_either_color(
         self,
