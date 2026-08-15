@@ -1,7 +1,7 @@
 {% extends 'backgammon/base.html' %}
 {% load static %}
 
-{% block title %}Игра #{{ game.pk }} · Длинные нарды{% endblock %}
+{% block title %}Игра №{{ game.party_number|default:"—" }} · Длинные нарды{% endblock %}
 
 {% block content %}
 <div
@@ -36,7 +36,7 @@
         <aside class="game-side">
             <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
                 <div>
-                    <h1 class="h4 mb-1">Игра #{{ game.pk }}</h1>
+                    <h1 class="h4 mb-1">Игра №{{ game.party_number|default:"—" }}</h1>
                     <div id="status-line" class="text-secondary"></div>
                 </div>
                 <a class="btn btn-outline-secondary btn-sm" href="{% url 'backgammon:game_list' %}">К списку</a>

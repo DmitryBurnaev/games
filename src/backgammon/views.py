@@ -7,11 +7,12 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import get_user_model
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -210,6 +211,33 @@ def can_view_game(game: Game, user: Any) -> bool:
     return game.status == Game.Status.WAITING or bool(game.color_for(user))
 
 
+def assign_party_number(game: Game) -> None:
+    """Assign the next number in this pair of players' game sequence."""
+    if game.white_player_id is None or game.black_player_id is None:
+        raise GameError("Нельзя назначить номер партии без двух игроков.")
+    player_ids = sorted((game.white_player_id, game.black_player_id))
+
+    # User rows form a stable lock for the pair, including when it has no prior
+    # completed games yet. That prevents concurrent joins from picking the same
+    # number.
+    list(
+        get_user_model()
+        .objects.select_for_update()
+        .filter(pk__in=player_ids)
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    highest_number = (
+        Game.objects.select_for_update()
+        .filter(
+            Q(white_player_id=player_ids[0], black_player_id=player_ids[1])
+            | Q(white_player_id=player_ids[1], black_player_id=player_ids[0])
+        )
+        .aggregate(highest=Max("party_number"))["highest"]
+    )
+    game.party_number = (highest_number or 0) + 1
+
+
 @login_required
 def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Render the playable board for a game."""
@@ -265,6 +293,7 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
             game.white_player = request.user
         else:
             game.black_player = request.user
+        assign_party_number(game)
         game.current_player = (
             game.white_player if white_die > black_die else game.black_player
         )
@@ -273,6 +302,7 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
             update_fields=[
                 "white_player",
                 "black_player",
+                "party_number",
                 "current_player",
                 "status",
                 "updated_at",

@@ -892,6 +892,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     )
     return {
         "id": game.id,
+        "party_number": game.party_number,
         "status": game.status,
         "victory_type": game.victory_type,
         "white_player": player_payload(game.white_player),

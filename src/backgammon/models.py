@@ -4,6 +4,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -121,6 +122,11 @@ class Game(models.Model):
     status = models.CharField(max_length=16, choices=Status, default=Status.WAITING)
     victory_type = models.CharField(max_length=8, choices=VictoryType, blank=True)
     checker_count = models.PositiveSmallIntegerField(default=DEFAULT_CHECKER_COUNT)
+    party_number = models.PositiveIntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(1)],
+    )
     board = models.JSONField(default=initial_board)
     borne_off = models.JSONField(default=dict)
     dice = models.JSONField(default=list, blank=True)
