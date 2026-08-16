@@ -103,8 +103,12 @@ def decorate_lobby_game(game: Game, user: Any) -> Game:
     game.started_at_label = moscow_datetime_label(started_at)
     game.duration_label = game_duration_label(ended_at - started_at)
     game.winner_is_viewer = bool(game.winner_id and game.winner_id == user.id)
-    game.white_player_label = user_display_name(game.white_player)
-    game.black_player_label = user_display_name(game.black_player)
+    game.white_player_label = user_display_name(
+        game.white_player or game.planned_opponent
+    )
+    game.black_player_label = user_display_name(
+        game.black_player or game.planned_opponent
+    )
     game.waiting_player_label = user_display_name(
         game.white_player or game.black_player
     )
@@ -118,6 +122,15 @@ def default_checker_color_for(user: Any) -> str:
         .values_list("default_checker_color", flat=True)
         .first()
         or Game.Color.WHITE
+    )
+
+
+def default_opponent_for(user: Any) -> int | None:
+    """Return the player's admin-managed default opponent, if configured."""
+    return (
+        BackgammonPlayerPreference.objects.filter(user=user)
+        .values_list("default_opponent_id", flat=True)
+        .first()
     )
 
 
@@ -141,7 +154,7 @@ def signup(request: HttpRequest) -> HttpResponse:
 def game_list(request: HttpRequest) -> HttpResponse:
     """Render the lobby with the user's games, open games, and stats."""
     games = Game.objects.select_related(
-        "white_player", "black_player", "current_player", "winner"
+        "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
     my_games = [
         decorate_lobby_game(game, request.user)
@@ -168,6 +181,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
             "stats": stats,
             "default_checker_color": default_checker_color_for(request.user),
             "default_checker_count": DEFAULT_CHECKER_COUNT,
+            "default_opponent_id": default_opponent_for(request.user),
             "checker_count_presets": checker_count_presets,
             "opponents": get_user_model()
             .objects.exclude(pk=request.user.pk)
@@ -261,6 +275,10 @@ def assign_party_number(game: Game, pending_opponent_id: int | None = None) -> N
         .filter(
             Q(white_player_id=player_ids[0], black_player_id=player_ids[1])
             | Q(white_player_id=player_ids[1], black_player_id=player_ids[0])
+            | Q(white_player_id=player_ids[0], planned_opponent_id=player_ids[1])
+            | Q(white_player_id=player_ids[1], planned_opponent_id=player_ids[0])
+            | Q(black_player_id=player_ids[0], planned_opponent_id=player_ids[1])
+            | Q(black_player_id=player_ids[1], planned_opponent_id=player_ids[0])
         )
         .aggregate(highest=Max("party_number"))["highest"]
     )
@@ -272,7 +290,11 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
     """Render the playable board for a game."""
     game = get_object_or_404(
         Game.objects.select_related(
-            "white_player", "black_player", "current_player", "winner"
+            "white_player",
+            "black_player",
+            "planned_opponent",
+            "current_player",
+            "winner",
         ),
         pk=pk,
     )
@@ -382,7 +404,7 @@ def queue_game_update(game_id: int) -> None:
 def get_participant_game(pk: int, user: Any, for_update: bool = False) -> Game:
     """Fetch a game and ensure the user is one of its players."""
     queryset = Game.objects.select_related(
-        "white_player", "black_player", "current_player", "winner"
+        "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
     if for_update:
         queryset = queryset.select_for_update()
@@ -397,7 +419,11 @@ def game_state(request: HttpRequest, pk: int) -> JsonResponse:
     """Return the current serialized game state for polling."""
     game = get_object_or_404(
         Game.objects.select_related(
-            "white_player", "black_player", "current_player", "winner"
+            "white_player",
+            "black_player",
+            "planned_opponent",
+            "current_player",
+            "winner",
         ),
         pk=pk,
     )

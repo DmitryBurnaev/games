@@ -180,6 +180,14 @@ body {
     line-height: 36px;
 }
 
+.game-id-line {
+    position: absolute;
+    right: 1rem;
+    bottom: 0.7rem;
+    font-size: .75rem;
+    line-height: 1;
+}
+
 .surrender-button {
     position: absolute;
     right: 1rem;

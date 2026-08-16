@@ -74,7 +74,11 @@ class GameStateConsumer(AsyncJsonWebsocketConsumer):
         """Fetch the subscribed game with related player objects."""
         try:
             return Game.objects.select_related(
-                "white_player", "black_player", "current_player", "winner"
+                "white_player",
+                "black_player",
+                "planned_opponent",
+                "current_player",
+                "winner",
             ).get(pk=self.game_id)
         except Game.DoesNotExist:
             return None

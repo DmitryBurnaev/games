@@ -37,7 +37,6 @@
             <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
                 <div>
                     <h1 class="h4 mb-1">Игра #{{ game.party_number|default:"—" }}</h1>
-                    <div class="text-secondary small">ID: {{ game.pk }}</div>
                     <div id="status-line" class="text-secondary"></div>
                 </div>
                 <a class="btn btn-outline-secondary btn-sm" href="{% url 'backgammon:game_list' %}">К списку</a>
@@ -86,6 +85,7 @@
             <div id="finished-stats-panel" class="finished-stats-panel"></div>
             <div id="error-line" class="text-danger small mt-3"></div>
             <div id="game-duration-line" class="game-duration-line text-secondary small d-none">⌛ <span id="game-duration">—</span></div>
+            <div class="game-id-line text-secondary">ID: {{ game.pk }}</div>
             <button id="surrender-button" class="btn btn-outline-danger btn-sm surrender-button{% if game.status != 'active' %} d-none{% endif %}" type="button" aria-label="Сдаться" title="Сдаться">🙌</button>
             <div id="domovoy-pop" class="domovoy-pop" aria-hidden="true">
                 <img id="domovoy-image" alt="" src="">
@@ -119,5 +119,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=67"></script>
+<script src="{% static 'backgammon/game.js' %}?v=69"></script>
 {% endblock %}
