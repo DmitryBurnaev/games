@@ -114,6 +114,20 @@
         return player ? player.display_name || player.username : 'ожидание';
     }
 
+    function renderPlayerLabel(element, colorName, player) {
+        const plannedOpponentIsWaiting = game.status === 'waiting'
+            && !player
+            && game.planned_opponent;
+        const displayedPlayer = plannedOpponentIsWaiting ? game.planned_opponent : player;
+        element.replaceChildren(`${colorName}: ${playerName(displayedPlayer)}`);
+        if (plannedOpponentIsWaiting) {
+            const waitingNote = document.createElement('span');
+            waitingNote.className = 'text-secondary';
+            waitingNote.textContent = ' (ждемс... ⏳)';
+            element.append(waitingNote);
+        }
+    }
+
     function showError(message) {
         errorLine.textContent = message || '';
     }
@@ -1341,8 +1355,8 @@
         }
         renderTurnState();
         renderPageMessages();
-        whitePlayer.textContent = `Белые: ${playerName(game.white_player)}`;
-        blackPlayer.textContent = `Черные: ${playerName(game.black_player)}`;
+        renderPlayerLabel(whitePlayer, 'Белые', game.white_player);
+        renderPlayerLabel(blackPlayer, 'Черные', game.black_player);
         statusLine.textContent = statusText();
         renderCurrentGameDuration();
         dicePanel.classList.toggle('d-none', game.status === 'finished');

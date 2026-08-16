@@ -229,6 +229,13 @@ class BackgammonPlayerPreference(models.Model):
         choices=Game.Color,
         default=Game.Color.WHITE,
     )
+    default_opponent = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="preferred_by_backgammon_players",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -236,6 +243,14 @@ class BackgammonPlayerPreference(models.Model):
 
     def __str__(self) -> str:
         return f"Backgammon preferences for {self.user}"
+
+    def clean(self) -> None:
+        """Reject a preference that would select the player themselves."""
+        super().clean()
+        if self.default_opponent_id == self.user_id:
+            raise ValidationError(
+                {"default_opponent": "A player cannot be their own opponent."}
+            )
 
 
 class QuickNotificationPreset(models.Model):

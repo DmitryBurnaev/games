@@ -1541,6 +1541,7 @@ class GameLobbyTests(TestCase):
         BackgammonPlayerPreference.objects.create(
             user=self.viewer,
             default_checker_color=Game.Color.BLACK,
+            default_opponent=self.opponent,
         )
         AppSetting.objects.update_or_create(
             key=AppSetting.Key.BACKGAMMON_CHECKER_COUNT_PRESETS,
@@ -1556,7 +1557,7 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, 'value="10"')
         self.assertContains(response, 'value="15" checked')
         self.assertContains(response, 'name="opponent"')
-        self.assertContains(response, f'value="{self.opponent.pk}"')
+        self.assertContains(response, f'value="{self.opponent.pk}" selected')
 
     def test_create_game_uses_selected_color_and_checker_count(self) -> None:
         """Posting setup choices creates a waiting game with the selected setup."""
@@ -1584,6 +1585,31 @@ class GameLobbyTests(TestCase):
         self.assertEqual(game.checker_count, 5)
         self.assertEqual(game.board, initial_board_for_count(5))
         self.assertEqual(game.party_number, 1)
+
+    def test_create_game_numbers_planned_games_for_same_pair_sequentially(
+        self,
+    ) -> None:
+        """Planned games share one sequence despite colors and checker counts."""
+        self.client.post(
+            reverse("backgammon:create_game"),
+            {
+                "color": Game.Color.WHITE,
+                "checker_count": "15",
+                "opponent": self.opponent.pk,
+            },
+        )
+        self.client.post(
+            reverse("backgammon:create_game"),
+            {
+                "color": Game.Color.BLACK,
+                "checker_count": "10",
+                "opponent": self.opponent.pk,
+            },
+        )
+
+        games = list(Game.objects.order_by("pk"))
+
+        self.assertEqual([game.party_number for game in games], [1, 2])
 
     @patch("backgammon.views.roll_die", side_effect=[6, 1])
     def test_planned_game_is_visible_only_to_selected_opponent(
@@ -1725,6 +1751,40 @@ class GameLobbyTests(TestCase):
         self.assertEqual(different_pair.party_number, 1)
         self.assertIsNone(waiting.party_number)
 
+    def test_planned_party_number_backfill_includes_waiting_games(self) -> None:
+        """The corrective migration numbers planned and active games together."""
+        first = Game.objects.create(
+            white_player=self.viewer,
+            planned_opponent=self.opponent,
+            party_number=14,
+        )
+        second = Game.objects.create(
+            black_player=self.viewer,
+            planned_opponent=self.opponent,
+            party_number=14,
+            checker_count=10,
+            board=initial_board_for_count(10),
+        )
+        third = Game.objects.create(
+            white_player=self.opponent,
+            black_player=self.viewer,
+            party_number=14,
+            status=Game.Status.ACTIVE,
+        )
+        unpaired = Game.objects.create(white_player=self.viewer)
+
+        migration = import_module(
+            "backgammon.migrations.0011_backfill_planned_opponent_party_numbers"
+        )
+        migration.backfill_party_numbers(django_apps, None)
+        for game in (first, second, third, unpaired):
+            game.refresh_from_db()
+
+        self.assertEqual(first.party_number, 1)
+        self.assertEqual(second.party_number, 2)
+        self.assertEqual(third.party_number, 3)
+        self.assertIsNone(unpaired.party_number)
+
     def test_waiting_game_detail_hides_join_button_for_creator_of_either_color(
         self,
     ) -> None:
@@ -1804,6 +1864,10 @@ class GameLobbyTests(TestCase):
             party_number=4,
             status=Game.Status.WAITING,
         )
+        waiting_without_party_number = Game.objects.create(
+            white_player=self.opponent,
+            status=Game.Status.WAITING,
+        )
         Game.objects.filter(pk=viewer_win.pk).update(
             created_at=datetime(2026, 5, 3, 10, 0, tzinfo=datetime_timezone.utc),
             started_at=datetime(2026, 5, 3, 10, 5, tzinfo=datetime_timezone.utc),
@@ -1839,6 +1903,7 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, "Vera Viewer ⇆ opponent 🌚")
         for party_number in range(1, 5):
             self.assertContains(response, f"#{party_number}")
+        self.assertContains(response, f"ID: {waiting_without_party_number.pk}")
         self.assertNotContains(response, "viewer ⇆ opponent")
         self.assertContains(response, "победа")
         self.assertContains(response, "text-bg-success")

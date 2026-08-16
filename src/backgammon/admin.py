@@ -148,8 +148,8 @@ class GameAdmin(admin.ModelAdmin):
 class BackgammonPlayerPreferenceAdmin(admin.ModelAdmin):
     """Admin view for user-level backgammon defaults."""
 
-    list_display = ("user", "default_checker_color", "updated_at")
-    list_editable = ("default_checker_color",)
+    list_display = ("user", "default_checker_color", "default_opponent", "updated_at")
+    list_editable = ("default_checker_color", "default_opponent")
     search_fields = ("user__username", "user__first_name", "user__last_name")
 
 

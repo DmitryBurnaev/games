@@ -897,6 +897,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "victory_type": game.victory_type,
         "white_player": player_payload(game.white_player),
         "black_player": player_payload(game.black_player),
+        "planned_opponent": player_payload(game.planned_opponent),
         "current_player": player_payload(game.current_player),
         "winner": player_payload(game.winner),
         "viewer_color": viewer_color,
