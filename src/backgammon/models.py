@@ -105,6 +105,13 @@ class Game(models.Model):
         blank=True,
         null=True,
     )
+    planned_opponent = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="planned_backgammon_games",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
     current_player = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="current_backgammon_games",

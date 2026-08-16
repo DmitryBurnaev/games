@@ -1555,6 +1555,8 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, 'value="5"')
         self.assertContains(response, 'value="10"')
         self.assertContains(response, 'value="15" checked')
+        self.assertContains(response, 'name="opponent"')
+        self.assertContains(response, f'value="{self.opponent.pk}"')
 
     def test_create_game_uses_selected_color_and_checker_count(self) -> None:
         """Posting setup choices creates a waiting game with the selected setup."""
@@ -1565,7 +1567,11 @@ class GameLobbyTests(TestCase):
 
         response = self.client.post(
             reverse("backgammon:create_game"),
-            {"color": Game.Color.BLACK, "checker_count": "5"},
+            {
+                "color": Game.Color.BLACK,
+                "checker_count": "5",
+                "opponent": self.opponent.pk,
+            },
         )
 
         game = Game.objects.get()
@@ -1574,9 +1580,42 @@ class GameLobbyTests(TestCase):
         )
         self.assertIsNone(game.white_player)
         self.assertEqual(game.black_player, self.viewer)
+        self.assertEqual(game.planned_opponent, self.opponent)
         self.assertEqual(game.checker_count, 5)
         self.assertEqual(game.board, initial_board_for_count(5))
-        self.assertIsNone(game.party_number)
+        self.assertEqual(game.party_number, 1)
+
+    @patch("backgammon.views.roll_die", side_effect=[6, 1])
+    def test_planned_game_is_visible_only_to_selected_opponent(
+        self, mocked_roll
+    ) -> None:
+        """A waiting game is listed for its selected opponent, not other users."""
+        game = Game.objects.create(
+            white_player=self.viewer,
+            planned_opponent=self.opponent,
+            party_number=1,
+        )
+        User = get_user_model()
+        other_user = User.objects.create_user(username="other", password="pass")
+
+        self.client.force_login(self.opponent)
+        response = self.client.get(reverse("backgammon:game_list"))
+        self.assertContains(response, f'href="/games/{game.pk}/"')
+        self.assertContains(response, "#1")
+
+        response = self.client.post(reverse("backgammon:join_game", args=[game.pk]))
+        game.refresh_from_db()
+        self.assertRedirects(
+            response, reverse("backgammon:game_detail", args=[game.pk])
+        )
+        self.assertEqual(game.black_player, self.opponent)
+        self.assertIsNone(game.planned_opponent)
+        self.assertEqual(game.status, Game.Status.ACTIVE)
+
+        self.client.force_login(other_user)
+        response = self.client.get(reverse("backgammon:game_list"))
+        self.assertNotContains(response, f'href="/games/{game.pk}/"')
+        mocked_roll.assert_called()
 
     @patch("backgammon.views.roll_die", side_effect=[6, 1])
     def test_join_game_fills_open_white_seat_for_black_creator(
@@ -1645,7 +1684,8 @@ class GameLobbyTests(TestCase):
 
         response = self.client.get(reverse("backgammon:game_detail", args=[game.pk]))
 
-        self.assertContains(response, "Игра №7")
+        self.assertContains(response, "Игра #7")
+        self.assertContains(response, f"ID: {game.pk}")
         self.assertNotContains(response, f"Игра #{game.pk}")
 
     def test_party_number_backfill_groups_pairs_and_orders_by_creation_time(
@@ -1723,7 +1763,11 @@ class GameLobbyTests(TestCase):
 
         response = self.client.post(
             reverse("backgammon:create_game"),
-            {"color": Game.Color.WHITE, "checker_count": "10"},
+            {
+                "color": Game.Color.WHITE,
+                "checker_count": "10",
+                "opponent": self.opponent.pk,
+            },
         )
 
         self.assertRedirects(response, reverse("backgammon:game_list"))
@@ -1737,6 +1781,7 @@ class GameLobbyTests(TestCase):
             winner=self.viewer,
             status=Game.Status.FINISHED,
             victory_type=Game.VictoryType.OIN,
+            party_number=1,
         )
         opponent_win = Game.objects.create(
             white_player=self.viewer,
@@ -1744,14 +1789,21 @@ class GameLobbyTests(TestCase):
             winner=self.opponent,
             status=Game.Status.FINISHED,
             victory_type=Game.VictoryType.MARS,
+            party_number=2,
         )
         Game.objects.create(
             white_player=self.viewer,
             black_player=self.opponent,
             current_player=self.viewer,
             status=Game.Status.ACTIVE,
+            party_number=3,
         )
-        Game.objects.create(white_player=self.viewer, status=Game.Status.WAITING)
+        Game.objects.create(
+            white_player=self.viewer,
+            planned_opponent=self.opponent,
+            party_number=4,
+            status=Game.Status.WAITING,
+        )
         Game.objects.filter(pk=viewer_win.pk).update(
             created_at=datetime(2026, 5, 3, 10, 0, tzinfo=datetime_timezone.utc),
             started_at=datetime(2026, 5, 3, 10, 5, tzinfo=datetime_timezone.utc),
@@ -1785,6 +1837,8 @@ class GameLobbyTests(TestCase):
         self.assertNotContains(response, "дубли:")
         self.assertContains(response, "Vera Viewer ⇆ opponent")
         self.assertContains(response, "Vera Viewer ⇆ opponent 🌚")
+        for party_number in range(1, 5):
+            self.assertContains(response, f"#{party_number}")
         self.assertNotContains(response, "viewer ⇆ opponent")
         self.assertContains(response, "победа")
         self.assertContains(response, "text-bg-success")
