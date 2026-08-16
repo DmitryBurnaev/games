@@ -126,6 +126,7 @@ class GameAdmin(admin.ModelAdmin):
         "party_number",
         "white_player",
         "black_player",
+        "planned_opponent",
         "status",
         "checker_count",
         "current_player",

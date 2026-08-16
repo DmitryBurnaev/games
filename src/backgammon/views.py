@@ -149,8 +149,10 @@ def game_list(request: HttpRequest) -> HttpResponse:
             Q(white_player=request.user) | Q(black_player=request.user)
         )[:20]
     ]
-    open_games_query = games.filter(status=Game.Status.WAITING).exclude(
-        Q(white_player=request.user) | Q(black_player=request.user)
+    open_games_query = (
+        games.filter(status=Game.Status.WAITING)
+        .filter(Q(planned_opponent=request.user) | Q(planned_opponent__isnull=True))
+        .exclude(Q(white_player=request.user) | Q(black_player=request.user))
     )
     open_games = [
         decorate_lobby_game(game, request.user) for game in open_games_query[:20]
@@ -167,6 +169,9 @@ def game_list(request: HttpRequest) -> HttpResponse:
             "default_checker_color": default_checker_color_for(request.user),
             "default_checker_count": DEFAULT_CHECKER_COUNT,
             "checker_count_presets": checker_count_presets,
+            "opponents": get_user_model()
+            .objects.exclude(pk=request.user.pk)
+            .order_by("username"),
         },
     )
 
@@ -192,30 +197,54 @@ def create_game(request: HttpRequest) -> HttpResponse:
         messages.error(request, "Выберите доступное количество шашек.")
         return redirect("backgammon:game_list")
 
+    try:
+        opponent_id = int(request.POST["opponent"])
+    except KeyError, ValueError:
+        messages.error(request, "Выберите соперника.")
+        return redirect("backgammon:game_list")
+    if opponent_id == request.user.pk:
+        messages.error(request, "Нельзя играть против себя.")
+        return redirect("backgammon:game_list")
+    opponent = get_object_or_404(get_user_model(), pk=opponent_id)
+
     player_field = (
         {"white_player": request.user}
         if color == Game.Color.WHITE
         else {"black_player": request.user}
     )
-    game = Game.objects.create(
-        **player_field,
-        checker_count=checker_count,
-        board=initial_board_for_count(checker_count),
-    )
+    with transaction.atomic():
+        game = Game(
+            **player_field,
+            planned_opponent=opponent,
+            checker_count=checker_count,
+            board=initial_board_for_count(checker_count),
+        )
+        assign_party_number(game, pending_opponent_id=opponent.pk)
+        game.save()
     messages.success(request, "Игра создана. Теперь нужен второй игрок.")
     return redirect("backgammon:game_detail", pk=game.pk)
 
 
 def can_view_game(game: Game, user: Any) -> bool:
     """Return whether a user may open a game detail page."""
-    return game.status == Game.Status.WAITING or bool(game.color_for(user))
+    if game.status != Game.Status.WAITING:
+        return bool(game.color_for(user))
+    return (
+        game.planned_opponent_id is None
+        or bool(game.color_for(user))
+        or game.planned_opponent_id == user.id
+    )
 
 
-def assign_party_number(game: Game) -> None:
+def assign_party_number(game: Game, pending_opponent_id: int | None = None) -> None:
     """Assign the next number in this pair of players' game sequence."""
-    if game.white_player_id is None or game.black_player_id is None:
+    player_ids = [game.white_player_id, game.black_player_id]
+    if pending_opponent_id is not None:
+        player_ids.append(pending_opponent_id)
+    player_ids = [player_id for player_id in player_ids if player_id is not None]
+    if len(player_ids) != 2 or len(set(player_ids)) != 2:
         raise GameError("Нельзя назначить номер партии без двух игроков.")
-    player_ids = sorted((game.white_player_id, game.black_player_id))
+    player_ids.sort()
 
     # User rows form a stable lock for the pair, including when it has no prior
     # completed games yet. That prevents concurrent joins from picking the same
@@ -281,6 +310,12 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
         if game.color_for(request.user):
             messages.error(request, "Нельзя играть против себя.")
             return redirect("backgammon:game_detail", pk=game.pk)
+        if (
+            game.planned_opponent_id is not None
+            and game.planned_opponent_id != request.user.id
+        ):
+            messages.error(request, "Эта игра ожидает другого соперника.")
+            return redirect("backgammon:game_list")
         if not game.white_player and not game.black_player:
             messages.error(request, "К этой игре уже нельзя присоединиться.")
             return redirect("backgammon:game_detail", pk=game.pk)
@@ -293,7 +328,9 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
             game.white_player = request.user
         else:
             game.black_player = request.user
-        assign_party_number(game)
+        if game.party_number is None:
+            assign_party_number(game)
+        game.planned_opponent = None
         game.current_player = (
             game.white_player if white_die > black_die else game.black_player
         )
@@ -303,6 +340,7 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
                 "white_player",
                 "black_player",
                 "party_number",
+                "planned_opponent",
                 "current_player",
                 "status",
                 "updated_at",
