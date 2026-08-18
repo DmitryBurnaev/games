@@ -1741,9 +1741,7 @@ class GameLobbyTests(TestCase):
         Game.objects.filter(pk=second.pk).update(created_at=created_at)
         Game.objects.filter(pk=different_pair.pk).update(created_at=created_at)
 
-        migration = import_module(
-            "backgammon.migrations.0008_game_party_number_and_opponents"
-        )
+        migration = import_module("backgammon.migrations.0009_game_party_number")
         migration.backfill_party_numbers(django_apps, None)
         for game in (first, second, different_pair, waiting):
             game.refresh_from_db()
@@ -1775,9 +1773,7 @@ class GameLobbyTests(TestCase):
         )
         unpaired = Game.objects.create(white_player=self.viewer)
 
-        migration = import_module(
-            "backgammon.migrations.0008_game_party_number_and_opponents"
-        )
+        migration = import_module("backgammon.migrations.0009_game_party_number")
         migration.backfill_party_numbers(django_apps, None)
         for game in (first, second, third, unpaired):
             game.refresh_from_db()

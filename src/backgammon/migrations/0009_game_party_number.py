@@ -1,6 +1,4 @@
 import django.core.validators
-import django.db.models.deletion
-from django.conf import settings
 from django.db import migrations, models
 
 
@@ -30,8 +28,7 @@ def backfill_party_numbers(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("backgammon", "0007_game_setup_options"),
-        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        ("backgammon", "0008_game_opponents"),
     ]
 
     operations = [
@@ -42,28 +39,6 @@ class Migration(migrations.Migration):
                 blank=True,
                 null=True,
                 validators=[django.core.validators.MinValueValidator(1)],
-            ),
-        ),
-        migrations.AddField(
-            model_name="game",
-            name="planned_opponent",
-            field=models.ForeignKey(
-                blank=True,
-                null=True,
-                on_delete=django.db.models.deletion.SET_NULL,
-                related_name="planned_backgammon_games",
-                to=settings.AUTH_USER_MODEL,
-            ),
-        ),
-        migrations.AddField(
-            model_name="backgammonplayerpreference",
-            name="default_opponent",
-            field=models.ForeignKey(
-                blank=True,
-                null=True,
-                on_delete=django.db.models.deletion.SET_NULL,
-                related_name="preferred_by_backgammon_players",
-                to=settings.AUTH_USER_MODEL,
             ),
         ),
         migrations.RunPython(backfill_party_numbers, migrations.RunPython.noop),
