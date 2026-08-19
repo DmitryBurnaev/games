@@ -1711,7 +1711,11 @@ class GameLobbyTests(TestCase):
         response = self.client.get(reverse("backgammon:game_detail", args=[game.pk]))
 
         self.assertContains(response, "Игра #7")
-        self.assertContains(response, f"ID: {game.pk}")
+        self.assertContains(
+            response,
+            f'<span id="game-id-value">{game.pk}</span>',
+            html=True,
+        )
         self.assertNotContains(response, f"Игра #{game.pk}")
 
     def test_party_number_backfill_groups_pairs_and_orders_by_creation_time(
