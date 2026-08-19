@@ -84,8 +84,10 @@
             <div id="move-panel" class="move-panel"></div>
             <div id="finished-stats-panel" class="finished-stats-panel"></div>
             <div id="error-line" class="text-danger small mt-3"></div>
-            <div id="game-duration-line" class="game-duration-line text-secondary small d-none">⌛ <span id="game-duration">—</span></div>
-            <div class="game-id-line text-secondary">ID: {{ game.pk }}</div>
+            <div class="game-footer-meta text-secondary small">
+                <div class="game-id-line">⚙️ <span id="game-id-value">{{ game.pk }}</span></div>
+                <div id="game-duration-line" class="game-duration-line d-none">⌛ <span id="game-duration">—</span></div>
+            </div>
             <button id="surrender-button" class="btn btn-outline-danger btn-sm surrender-button{% if game.status != 'active' %} d-none{% endif %}" type="button" aria-label="Сдаться" title="Сдаться">🙌</button>
             <div id="domovoy-pop" class="domovoy-pop" aria-hidden="true">
                 <img id="domovoy-image" alt="" src="">

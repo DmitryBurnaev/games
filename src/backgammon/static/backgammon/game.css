@@ -173,19 +173,23 @@ body {
     line-height: 1;
 }
 
-.game-duration-line {
+.game-footer-meta {
     position: absolute;
     bottom: 1rem;
     left: 1rem;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    min-height: 36px;
+}
+
+.game-duration-line {
     line-height: 36px;
 }
 
 .game-id-line {
-    position: absolute;
-    right: 1rem;
-    bottom: 0.7rem;
-    font-size: .75rem;
     line-height: 1;
+    white-space: nowrap;
 }
 
 .surrender-button {
