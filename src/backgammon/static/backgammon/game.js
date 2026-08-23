@@ -39,6 +39,7 @@
     const remainingRow = document.getElementById('remaining-row');
     const movePanel = document.getElementById('move-panel');
     const finishedStatsPanel = document.getElementById('finished-stats-panel');
+    const debugStatistics = document.getElementById('debug-statistics');
     const controlPanel = document.getElementById('control-panel');
     const rollButton = document.getElementById('roll-button');
     const undoButton = document.getElementById('undo-button');
@@ -1309,6 +1310,55 @@
         `;
     }
 
+    function debugStatisticsByColor() {
+        const statistics = {
+            white: { rolls: 0, doubles: 0, singles: 0, checkerMoves: 0, bearOffs: 0 },
+            black: { rolls: 0, doubles: 0, singles: 0, checkerMoves: 0, bearOffs: 0 },
+        };
+        const players = {
+            [game.white_player && game.white_player.id]: 'white',
+            [game.black_player && game.black_player.id]: 'black',
+        };
+        (game.debug_move_history || []).forEach((move) => {
+            const color = players[move.player_id];
+            if (!color) {
+                return;
+            }
+            if (move.action === 'roll' && Array.isArray(move.dice) && move.dice.length === 2) {
+                statistics[color].rolls += 1;
+                if (move.dice[0] === move.dice[1]) {
+                    statistics[color].doubles += 1;
+                } else {
+                    statistics[color].singles += 1;
+                }
+            } else if (move.action === 'move') {
+                statistics[color].checkerMoves += 1;
+            } else if (move.action === 'bear_off') {
+                statistics[color].bearOffs += 1;
+            }
+        });
+        return statistics;
+    }
+
+    function debugStatisticsLabel(statistics, key) {
+        return `${statistics.white[key]} / ${statistics.black[key]}`;
+    }
+
+    function renderDebugStatistics() {
+        if (!debugGameTools || !debugStatistics) {
+            return;
+        }
+        const statistics = debugStatisticsByColor();
+        debugStatistics.innerHTML = `
+            <dt>Белые / чёрные</dt><dd></dd>
+            <dt>Ходы</dt><dd>${debugStatisticsLabel(statistics, 'rolls')}</dd>
+            <dt>Дубли</dt><dd>${debugStatisticsLabel(statistics, 'doubles')}</dd>
+            <dt>Одиночные</dt><dd>${debugStatisticsLabel(statistics, 'singles')}</dd>
+            <dt>Перемещения</dt><dd>${debugStatisticsLabel(statistics, 'checkerMoves')}</dd>
+            <dt>Вывод шашек</dt><dd>${debugStatisticsLabel(statistics, 'bearOffs')}</dd>
+        `;
+    }
+
     function renderDice() {
         const diceKey = JSON.stringify(game.dice || []);
         const shouldFlashDice = lastDiceKey && diceKey !== lastDiceKey && game.dice.length > 0;
@@ -1401,6 +1451,7 @@
         renderBoard();
         renderMoves();
         renderFinishedStats();
+        renderDebugStatistics();
         renderQuickNotifications();
         maybeShowVictoryAnimation();
     }

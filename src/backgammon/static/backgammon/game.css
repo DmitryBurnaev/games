@@ -103,6 +103,37 @@ body {
     min-height: 36px;
 }
 
+.debug-panel {
+    border: 1px dashed rgba(43, 48, 53, .35);
+    border-radius: 6px;
+    padding: .65rem .75rem;
+}
+
+.debug-panel-title {
+    color: #2b3035;
+    font-size: .9rem;
+    font-weight: 700;
+    margin-bottom: .4rem;
+}
+
+.debug-panel dl {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: .2rem .75rem;
+    margin: 0;
+    font-size: .8rem;
+}
+
+.debug-panel dt {
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.debug-panel dd {
+    margin: 0;
+    text-align: right;
+}
+
 .dice-row {
     display: flex;
     gap: .5rem;

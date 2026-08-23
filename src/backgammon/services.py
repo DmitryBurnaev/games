@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from .app_settings import (
     DICE_MODE_PLAYER_BAG,
+    backgammon_debug_tools,
     backgammon_dice_mode,
     backgammon_notification_display_ms,
     backgammon_quick_notifications_enabled,
@@ -161,10 +162,12 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
         color = game.color_for(move.player)
         if not color:
             continue
-        statistics[color]["total_points"] += sum(move.dice)
+        rolled_points = sum(move.dice)
         if move.dice[0] == move.dice[1]:
+            rolled_points *= 2
             statistics[color]["double_rolls"] += 1
             statistics[color]["double_moves_available"] += 4
+        statistics[color]["total_points"] += rolled_points
 
     for move in moves.filter(
         action__in=[GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
@@ -890,7 +893,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         and bool(viewer_color)
         and has_blocking_event(game.board, viewer_color)
     )
-    return {
+    payload = {
         "id": game.id,
         "party_number": game.party_number,
         "status": game.status,
@@ -961,6 +964,13 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "last_move_steps": last_move_steps(game, viewer),
         "legal_moves": viewer_moves,
     }
+    if backgammon_debug_tools():
+        payload["debug_move_history"] = list(
+            game.moves.order_by("created_at", "pk").values(
+                "action", "dice", "player_id", "distance"
+            )
+        )
+    return payload
 
 
 def can_undo_last_move(game: Game, user: Any) -> bool:
