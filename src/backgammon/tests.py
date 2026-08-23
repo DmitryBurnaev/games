@@ -1559,6 +1559,22 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, 'name="opponent"')
         self.assertContains(response, f'value="{self.opponent.pk}" selected')
 
+    def test_lobby_total_counts_all_games_with_viewer_as_player_or_opponent(
+        self,
+    ) -> None:
+        """The lobby total includes active, waiting, and planned games for the viewer."""
+        other_user = get_user_model().objects.create_user(
+            username="other-user", password="pass"
+        )
+        Game.objects.create(white_player=self.viewer, black_player=self.opponent)
+        Game.objects.create(black_player=self.viewer, planned_opponent=self.opponent)
+        Game.objects.create(white_player=self.opponent, planned_opponent=self.viewer)
+        Game.objects.create(white_player=self.opponent, black_player=other_user)
+
+        response = self.client.get(reverse("backgammon:game_list"))
+
+        self.assertContains(response, "Игр: 3")
+
     def test_create_game_uses_selected_color_and_checker_count(self) -> None:
         """Posting setup choices creates a waiting game with the selected setup."""
         AppSetting.objects.update_or_create(
