@@ -6,11 +6,9 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
     <div>
         <h1 class="h3 mb-1">Игры</h1>
-        {% if stats %}
-            <div class="text-secondary small">
-                Игр: {{ stats.games_played }} · Побед: {{ stats.wins }} · Поражений: {{ stats.losses }} · Марсов: {{ stats.mars_wins }}
-            </div>
-        {% endif %}
+        <div class="text-secondary small">
+            Игр: {{ my_games_count }}{% if stats %} · Побед: {{ stats.wins }} · Поражений: {{ stats.losses }} · Марсов: {{ stats.mars_wins }}{% endif %}
+        </div>
     </div>
     <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#gameSetupModal">
         Новая игра

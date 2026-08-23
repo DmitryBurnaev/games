@@ -156,6 +156,11 @@ def game_list(request: HttpRequest) -> HttpResponse:
     games = Game.objects.select_related(
         "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
+    my_games_count = games.filter(
+        Q(white_player=request.user)
+        | Q(black_player=request.user)
+        | Q(planned_opponent=request.user)
+    ).count()
     my_games = [
         decorate_lobby_game(game, request.user)
         for game in games.filter(
@@ -177,6 +182,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
         "backgammon/game_list.html",
         {
             "my_games": my_games,
+            "my_games_count": my_games_count,
             "open_games": open_games,
             "stats": stats,
             "default_checker_color": default_checker_color_for(request.user),
