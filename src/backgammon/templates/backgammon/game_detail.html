@@ -66,6 +66,13 @@
                 <div id="remaining-row" class="small text-secondary mt-2"></div>
             </div>
 
+            {% if debug_game_tools %}
+                <section id="debug-panel" class="debug-panel mb-3" aria-label="Debug">
+                    <div class="debug-panel-title">Debug</div>
+                    <dl id="debug-statistics"></dl>
+                </section>
+            {% endif %}
+
             <div id="control-panel" class="d-grid gap-2 mb-3{% if game.status != 'active' %} d-none{% endif %}">
                 <button id="roll-button" class="btn btn-primary" type="button">Бросить кубики</button>
                 <div class="turn-actions">
@@ -121,5 +128,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=69"></script>
+<script src="{% static 'backgammon/game.js' %}?v=70"></script>
 {% endblock %}

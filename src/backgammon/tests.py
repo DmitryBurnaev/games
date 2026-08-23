@@ -1240,13 +1240,13 @@ class GameRulesTests(TestCase):
             payload["dice_statistics"],
             {
                 "white": {
-                    "total_points": 15,
+                    "total_points": 27,
                     "double_rolls": 1,
                     "double_moves_used": 2,
                     "double_moves_available": 4,
                 },
                 "black": {
-                    "total_points": 6,
+                    "total_points": 12,
                     "double_rolls": 1,
                     "double_moves_used": 0,
                     "double_moves_available": 4,
@@ -1965,12 +1965,51 @@ class GameDebugToolsTests(TestCase):
         self.assertContains(response, "Тест финального дубля")
         self.assertContains(response, "Тест головы 5/5")
         self.assertContains(response, "Тест блока 6")
+        self.assertContains(response, 'id="debug-panel"')
+        self.assertContains(response, 'id="debug-statistics"')
         self.assertContains(response, "👈")
         self.assertContains(response, 'data-debug-tools="1"')
         self.assertContains(response, "data-prepare-bear-off-url")
         self.assertContains(response, "data-prepare-final-double-url")
         self.assertContains(response, "data-prepare-extra-head-move-url")
         self.assertContains(response, "data-prepare-blocking-event-url")
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_debug_state_includes_raw_move_history_without_aggregates(self) -> None:
+        """The browser receives raw data to calculate Debug statistics itself."""
+        GameMove.objects.create(
+            game=self.game,
+            player=self.white,
+            action=GameMove.Action.ROLL,
+            dice=[6, 6],
+        )
+        GameMove.objects.create(
+            game=self.game,
+            player=self.black,
+            action=GameMove.Action.MOVE,
+            dice=[3, 4],
+            distance=3,
+        )
+
+        payload = serialize_game(self.game, self.white)
+
+        self.assertEqual(
+            payload["debug_move_history"],
+            [
+                {
+                    "action": GameMove.Action.ROLL,
+                    "dice": [6, 6],
+                    "player_id": self.white.id,
+                    "distance": None,
+                },
+                {
+                    "action": GameMove.Action.MOVE,
+                    "dice": [3, 4],
+                    "player_id": self.black.id,
+                    "distance": 3,
+                },
+            ],
+        )
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
     def test_final_double_debug_helper_prepares_winning_roll(self) -> None:
@@ -2119,11 +2158,13 @@ class GameDebugToolsTests(TestCase):
         self.assertNotContains(detail_response, "Тест финального дубля")
         self.assertNotContains(detail_response, "Тест головы 5/5")
         self.assertNotContains(detail_response, "Тест блока 6")
+        self.assertNotContains(detail_response, 'id="debug-panel"')
         self.assertContains(detail_response, 'data-debug-tools="0"')
         self.assertNotContains(detail_response, "data-prepare-bear-off-url")
         self.assertNotContains(detail_response, "data-prepare-final-double-url")
         self.assertNotContains(detail_response, "data-prepare-extra-head-move-url")
         self.assertNotContains(detail_response, "data-prepare-blocking-event-url")
+        self.assertNotIn("debug_move_history", serialize_game(self.game, self.white))
         self.assertEqual(endpoint_response.status_code, 403)
         self.assertEqual(extra_head_response.status_code, 403)
         self.assertEqual(blocking_event_response.status_code, 403)
