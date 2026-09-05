@@ -44,6 +44,11 @@ urlpatterns = [
         views.prepare_blocking_event,
         name="prepare_blocking_event",
     ),
+    path(
+        "games/<int:pk>/debug-place-checker/",
+        views.debug_place_checker,
+        name="debug_place_checker",
+    ),
     path("games/<int:pk>/undo/", views.undo_move, name="undo_move"),
     path("games/<int:pk>/end-turn/", views.end_turn, name="end_turn"),
 ]

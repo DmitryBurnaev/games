@@ -46,6 +46,7 @@ from .services import (
     create_roll,
     create_quick_notification,
     finish_blocked_turn,
+    place_debug_checker,
     quick_notification_options,
     roll_die,
     serialize_game,
@@ -591,6 +592,32 @@ def prepare_blocking_event(request: HttpRequest, pk: int) -> JsonResponse:
         with transaction.atomic():
             game = get_participant_game(pk, request.user, for_update=True)
             arrange_blocking_event_test(game, request.user)
+            game.refresh_from_db()
+            payload = serialize_game(game, request.user)
+            queue_game_update(game.pk)
+    except GameError as exc:
+        return json_error(str(exc))
+    return JsonResponse({"ok": True, "game": payload})
+
+
+@login_required
+@require_POST
+def debug_place_checker(request: HttpRequest, pk: int) -> JsonResponse:
+    """Place a checker on a selected point for debug board setup."""
+    if not backgammon_debug_tools():
+        return json_error("Отладочные игровые инструменты выключены.", status=403)
+    try:
+        data = get_json_body(request)
+        if not isinstance(data, dict):
+            raise GameError("Некорректный JSON.")
+        with transaction.atomic():
+            game = get_participant_game(pk, request.user, for_update=True)
+            place_debug_checker(
+                game,
+                request.user,
+                data.get("color", ""),
+                data.get("point"),
+            )
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
             queue_game_update(game.pk)
