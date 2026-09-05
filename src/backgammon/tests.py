@@ -44,6 +44,7 @@ from .services import (
     arrange_checkers_for_victory_test,
     arrange_checkers_in_home,
     arrange_final_double_test,
+    blocking_event_points,
     create_roll,
     finish_blocked_turn,
     roll_dice_from_player_bag,
@@ -1017,6 +1018,91 @@ class GameRulesTests(TestCase):
         game.refresh_from_db()
         self.assertEqual(game.current_player, self.black)
 
+    def test_blocking_event_detects_opponent_only_behind_home_block(self) -> None:
+        """An opponent behind a home block is not mistaken for one ahead."""
+        board = [None for _ in range(24)]
+        for point in range(18, 24):
+            board[point] = {"color": Game.Color.WHITE, "count": 1}
+        board[0] = {"color": Game.Color.BLACK, "count": 15}
+
+        self.assertEqual(
+            blocking_event_points(board, Game.Color.WHITE),
+            [18, 19, 20, 21, 22, 23],
+        )
+
+    def test_blocking_event_detects_more_than_six_points(self) -> None:
+        """A run longer than six stays prohibited when no opponent is ahead."""
+        board = [None for _ in range(24)]
+        for point in range(16, 23):
+            board[point] = {"color": Game.Color.WHITE, "count": 1}
+        board[3] = {"color": Game.Color.BLACK, "count": 15}
+
+        self.assertEqual(
+            blocking_event_points(board, Game.Color.WHITE),
+            [16, 17, 18, 19, 20, 21],
+        )
+
+    def test_blocking_event_allows_opponent_ahead(self) -> None:
+        """A six-point configuration is legal when an opponent is ahead."""
+        board = [None for _ in range(24)]
+        for point in range(10, 16):
+            board[point] = {"color": Game.Color.WHITE, "count": 1}
+        board[16] = {"color": Game.Color.BLACK, "count": 1}
+
+        self.assertEqual(blocking_event_points(board, Game.Color.WHITE), [])
+
+    def test_blocking_event_follows_black_path_across_numeric_boundary(self) -> None:
+        """Black runs remain consecutive across points 23 and 0."""
+        board = [None for _ in range(24)]
+        for point in [22, 23, 0, 1, 2, 3]:
+            board[point] = {"color": Game.Color.BLACK, "count": 1}
+        board[12] = {"color": Game.Color.WHITE, "count": 1}
+
+        self.assertEqual(
+            blocking_event_points(board, Game.Color.BLACK),
+            [22, 23, 0, 1, 2, 3],
+        )
+
+    def test_blocking_event_does_not_wrap_from_home_to_head(self) -> None:
+        """The end and beginning of one player's path are not consecutive."""
+        board = [None for _ in range(24)]
+        for point in [21, 22, 23, 0, 1, 2]:
+            board[point] = {"color": Game.Color.WHITE, "count": 1}
+
+        self.assertEqual(blocking_event_points(board, Game.Color.WHITE), [])
+
+    def test_end_turn_rejects_home_block_and_allows_after_breaking_it(self) -> None:
+        """Serialized and HTTP turn completion share the corrected block rule."""
+        game = self.active_game()
+        game.board = [None for _ in range(24)]
+        game.board[10] = {"color": Game.Color.WHITE, "count": 9}
+        for point in range(18, 24):
+            game.board[point] = {"color": Game.Color.WHITE, "count": 1}
+        game.board[0] = {"color": Game.Color.BLACK, "count": 15}
+        game.dice = [1]
+        game.remaining_moves = []
+        game.save()
+        self.client.force_login(self.white)
+
+        payload = serialize_game(game, self.white)
+        response = self.client.post(reverse("backgammon:end_turn", args=[game.pk]))
+
+        self.assertTrue(payload["blocking_event"])
+        self.assertFalse(payload["can_end_turn"])
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("разбейте блок", response.json()["error"])
+
+        game.board[23] = None
+        game.board[10]["count"] += 1
+        game.save(update_fields=["board", "updated_at"])
+
+        payload = serialize_game(game, self.white)
+        response = self.client.post(reverse("backgammon:end_turn", args=[game.pk]))
+
+        self.assertFalse(payload["blocking_event"])
+        self.assertTrue(payload["can_end_turn"])
+        self.assertEqual(response.status_code, 200)
+
     def test_move_markers_live_until_opponent_rolls(self) -> None:
         """Moved-checker markers transfer to the opponent until their roll."""
         game = self.active_game()
@@ -1989,6 +2075,9 @@ class GameDebugToolsTests(TestCase):
         self.assertContains(response, "data-prepare-final-double-url")
         self.assertContains(response, "data-prepare-extra-head-move-url")
         self.assertContains(response, "data-prepare-blocking-event-url")
+        self.assertContains(response, "data-debug-place-checker-url")
+        self.assertContains(response, 'id="debug-place-white-button"')
+        self.assertContains(response, 'id="debug-place-black-button"')
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
     def test_debug_state_includes_raw_move_history_without_aggregates(self) -> None:
@@ -2153,6 +2242,80 @@ class GameDebugToolsTests(TestCase):
         self.assertFalse(payload["can_end_turn"])
         self.assertTrue(payload["can_undo"])
 
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_debug_placement_relocates_either_color_and_preserves_totals(self) -> None:
+        """Debug placement moves checkers without changing either color total."""
+        white_response = self.client.post(
+            reverse("backgammon:debug_place_checker", args=[self.game.pk]),
+            data=json.dumps({"color": Game.Color.WHITE, "point": 5}),
+            content_type="application/json",
+        )
+        black_response = self.client.post(
+            reverse("backgammon:debug_place_checker", args=[self.game.pk]),
+            data=json.dumps({"color": Game.Color.BLACK, "point": 5}),
+            content_type="application/json",
+        )
+        self.game.refresh_from_db()
+
+        self.assertEqual(white_response.status_code, 200)
+        self.assertEqual(black_response.status_code, 200)
+        self.assertEqual(self.game.board[5], {"color": Game.Color.BLACK, "count": 1})
+        self.assertEqual(self.game.borne_off[Game.Color.WHITE], 1)
+        for color in Game.Color.values:
+            board_total = sum(
+                stack["count"]
+                for stack in self.game.board
+                if stack and stack["color"] == color
+            )
+            self.assertEqual(
+                board_total + self.game.borne_off[color], self.game.checker_count
+            )
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    @patch("backgammon.views.notify_game_updated")
+    def test_debug_placement_publishes_realtime_update_after_commit(
+        self,
+        notify_game_updated_mock,
+    ) -> None:
+        """Both players are refreshed through the standard realtime flow."""
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("backgammon:debug_place_checker", args=[self.game.pk]),
+                data=json.dumps({"color": Game.Color.WHITE, "point": 5}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        notify_game_updated_mock.assert_called_once_with(self.game.pk)
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_debug_placement_can_create_block_that_prevents_end_turn(self) -> None:
+        """A debug-created illegal block is enforced by state and endpoint."""
+        self.game.dice = [1]
+        self.game.remaining_moves = []
+        self.game.has_rolled = True
+        self.game.save()
+        placements = [(Game.Color.BLACK, 0)] + [
+            (Game.Color.WHITE, point) for point in range(18, 24)
+        ]
+        for color, point in placements:
+            response = self.client.post(
+                reverse("backgammon:debug_place_checker", args=[self.game.pk]),
+                data=json.dumps({"color": color, "point": point}),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+
+        self.game.refresh_from_db()
+        payload = serialize_game(self.game, self.white)
+        end_turn_response = self.client.post(
+            reverse("backgammon:end_turn", args=[self.game.pk])
+        )
+
+        self.assertEqual(payload["blocking_event_points"], [18, 19, 20, 21, 22, 23])
+        self.assertFalse(payload["can_end_turn"])
+        self.assertEqual(end_turn_response.status_code, 400)
+
     @override_settings(BACKGAMMON_DEBUG_TOOLS=False)
     def test_debug_buttons_and_endpoint_are_disabled_when_setting_is_off(self) -> None:
         """Debug buttons are hidden and helper endpoints reject requests."""
@@ -2168,6 +2331,11 @@ class GameDebugToolsTests(TestCase):
         blocking_event_response = self.client.post(
             reverse("backgammon:prepare_blocking_event", kwargs={"pk": self.game.pk})
         )
+        placement_response = self.client.post(
+            reverse("backgammon:debug_place_checker", kwargs={"pk": self.game.pk}),
+            data=json.dumps({"color": Game.Color.WHITE, "point": 5}),
+            content_type="application/json",
+        )
 
         self.assertNotContains(detail_response, "В дом для теста")
         self.assertNotContains(detail_response, "Тест победы")
@@ -2180,7 +2348,10 @@ class GameDebugToolsTests(TestCase):
         self.assertNotContains(detail_response, "data-prepare-final-double-url")
         self.assertNotContains(detail_response, "data-prepare-extra-head-move-url")
         self.assertNotContains(detail_response, "data-prepare-blocking-event-url")
+        self.assertNotContains(detail_response, "data-debug-place-checker-url")
+        self.assertNotContains(detail_response, 'id="debug-place-white-button"')
         self.assertNotIn("debug_move_history", serialize_game(self.game, self.white))
         self.assertEqual(endpoint_response.status_code, 403)
         self.assertEqual(extra_head_response.status_code, 403)
         self.assertEqual(blocking_event_response.status_code, 403)
+        self.assertEqual(placement_response.status_code, 403)

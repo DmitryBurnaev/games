@@ -134,6 +134,17 @@ body {
     text-align: right;
 }
 
+.debug-placement .btn.active {
+    box-shadow: 0 0 0 3px rgba(13, 110, 253, .2);
+}
+
+.point.debug-placement-target {
+    cursor: copy;
+    filter: brightness(1.08);
+    outline: 2px dashed rgba(13, 110, 253, .72);
+    outline-offset: -4px;
+}
+
 .dice-row {
     display: flex;
     gap: .5rem;

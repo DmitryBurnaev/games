@@ -318,15 +318,12 @@ def blocking_event_points(board: Board, color: Game.Color) -> list[int]:
     """Return the first illegal six-point block for a color, if present."""
     path = PATHS[color]
     opponent = opponent_color(color)
-    occupied = [point_has_color(board, point, color) for point in path]
-
-    for start in range(24):
-        points = [path[(start + offset) % 24] for offset in range(6)]
-        if not all(occupied[(start + offset) % 24] for offset in range(6)):
+    for start in range(len(path) - 5):
+        points = path[start : start + 6]
+        if not all(point_has_color(board, point, color) for point in points):
             continue
         has_opponent_ahead = any(
-            point_has_color(board, path[position % 24], opponent)
-            for position in range(start + 6, start + 24)
+            point_has_color(board, point, opponent) for point in path[start + 6 :]
         )
         if not has_opponent_ahead:
             return points
@@ -368,6 +365,76 @@ def add_checker(board: Board, point: int, color: Game.Color) -> None:
         stack["count"] += 1
     else:
         board[point] = {"color": color, "count": 1}
+
+
+def checker_total(
+    board: Board,
+    borne_off: dict[str, int],
+    color: Game.Color,
+) -> int:
+    """Return all checkers of a color on and off the board."""
+    return int(borne_off.get(color, 0)) + sum(
+        int(stack.get("count", 0))
+        for stack in board
+        if stack and stack.get("color") == color
+    )
+
+
+def place_debug_checker(
+    game: Game,
+    user: Any,
+    color: str,
+    point: int,
+) -> None:
+    """Relocate one checker to a point while preserving per-color totals."""
+    if game.status != Game.Status.ACTIVE:
+        raise GameError("Расставлять шашки можно только в активной игре.")
+    if not game.color_for(user):
+        raise GameError("Вы не участвуете в этой игре.")
+    if color not in Game.Color.values:
+        raise GameError("Некорректный цвет шашки.")
+    if isinstance(point, bool) or not isinstance(point, int) or not 0 <= point < 24:
+        raise GameError("Некорректный пункт.")
+
+    board = clone_board(game.board)
+    borne_off = {
+        candidate: int(game.borne_off.get(candidate, 0))
+        for candidate in Game.Color.values
+    }
+    for candidate in Game.Color.values:
+        if checker_total(board, borne_off, candidate) != game.checker_count:
+            raise GameError("Нельзя изменить несогласованную расстановку шашек.")
+
+    target_stack = board[point]
+    if target_stack and target_stack.get("color") != color:
+        displaced_color = target_stack["color"]
+        borne_off[displaced_color] += int(target_stack.get("count", 0))
+        board[point] = None
+
+    if borne_off[color] > 0:
+        borne_off[color] -= 1
+    else:
+        donor_points = [
+            index
+            for index, stack in enumerate(board)
+            if index != point and stack and stack.get("color") == color
+        ]
+        if not donor_points:
+            raise GameError("Все шашки этого цвета уже находятся на выбранном пункте.")
+        donor_point = max(
+            donor_points,
+            key=lambda index: int(board[index].get("count", 0)),
+        )
+        remove_checker(board, donor_point)
+
+    add_checker(board, point, color)
+    for candidate in Game.Color.values:
+        if checker_total(board, borne_off, candidate) != game.checker_count:
+            raise GameError("Не удалось сохранить количество шашек.")
+
+    game.board = board
+    game.borne_off = borne_off
+    game.save(update_fields=["board", "borne_off", "updated_at"])
 
 
 def remove_color_from_board(board: Board, color: Game.Color) -> int:

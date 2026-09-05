@@ -26,6 +26,7 @@
     data-prepare-final-double-url="{% url 'backgammon:prepare_final_double' game.pk %}"
     data-prepare-extra-head-move-url="{% url 'backgammon:prepare_extra_head_move' game.pk %}"
     data-prepare-blocking-event-url="{% url 'backgammon:prepare_blocking_event' game.pk %}"
+    data-debug-place-checker-url="{% url 'backgammon:debug_place_checker' game.pk %}"
     {% endif %}
     data-domovoy-one="{% static 'domovoy-1.jpg' %}"
     data-domovoy-two="{% static 'domovoy-2.jpg' %}"
@@ -70,6 +71,13 @@
                 <section id="debug-panel" class="debug-panel mb-3" aria-label="Debug">
                     <div class="debug-panel-title">Debug</div>
                     <dl id="debug-statistics"></dl>
+                    <div class="debug-placement mt-2">
+                        <div class="small text-secondary mb-1">Поставить шашку: выберите цвет и пункт</div>
+                        <div class="btn-group btn-group-sm w-100" role="group" aria-label="Цвет шашки для расстановки">
+                            <button id="debug-place-white-button" class="btn btn-outline-secondary" type="button">Белая</button>
+                            <button id="debug-place-black-button" class="btn btn-outline-dark" type="button">Черная</button>
+                        </div>
+                    </div>
                 </section>
             {% endif %}
 
@@ -128,5 +136,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=70"></script>
+<script src="{% static 'backgammon/game.js' %}?v=71"></script>
 {% endblock %}

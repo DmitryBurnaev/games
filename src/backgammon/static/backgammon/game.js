@@ -17,6 +17,7 @@
     const prepareFinalDoubleUrl = app.dataset.prepareFinalDoubleUrl;
     const prepareExtraHeadMoveUrl = app.dataset.prepareExtraHeadMoveUrl;
     const prepareBlockingEventUrl = app.dataset.prepareBlockingEventUrl;
+    const debugPlaceCheckerUrl = app.dataset.debugPlaceCheckerUrl;
     const debugGameTools = app.dataset.debugTools === '1';
     const moveAnimationsEnabled = app.dataset.animationsEnabled !== '0';
     const quickNotificationsEnabled = app.dataset.quickNotificationsEnabled === '1';
@@ -53,6 +54,8 @@
     const prepareFinalDoubleButton = document.getElementById('prepare-final-double-button');
     const prepareExtraHeadMoveButton = document.getElementById('prepare-extra-head-move-button');
     const prepareBlockingEventButton = document.getElementById('prepare-blocking-event-button');
+    const debugPlaceWhiteButton = document.getElementById('debug-place-white-button');
+    const debugPlaceBlackButton = document.getElementById('debug-place-black-button');
     const waitingForOpponentAlerts = Array.from(document.querySelectorAll('.alert'))
         .filter((element) => element.textContent.includes('Теперь нужен второй игрок'));
     const joinedGameAlerts = Array.from(document.querySelectorAll('.alert'))
@@ -68,6 +71,7 @@
 
     let game = null;
     let selectedSource = null;
+    let debugPlacementColor = null;
     let diceTimer = null;
     let diceAnimating = false;
     let diceAnimationStartedAt = 0;
@@ -1193,9 +1197,16 @@
         if (selectedSource === index) {
             point.classList.add('selected');
         }
+        if (debugPlacementColor && game.status === 'active' && game.viewer_color) {
+            point.classList.add('debug-placement-target');
+        }
         const pointLabel = debugGameTools ? `<span class="point-label">${index + 1}</span>` : '';
         point.innerHTML = `${pointLabel}${checkerHtml(game.board[index], index)}`;
         point.addEventListener('click', () => {
+            if (debugPlacementColor && game.status === 'active' && game.viewer_color) {
+                submitDebugPlacement(index);
+                return;
+            }
             if (selectedSource !== null) {
                 const targetMove = moveToPoint(selectedSource, index);
                 if (targetMove) {
@@ -1445,6 +1456,17 @@
         if (prepareBlockingEventButton) {
             prepareBlockingEventButton.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
         }
+        [debugPlaceWhiteButton, debugPlaceBlackButton].filter(Boolean).forEach((button) => {
+            button.disabled = game.status !== 'active' || !game.viewer_color || diceAnimating;
+        });
+        if (debugPlaceWhiteButton) {
+            debugPlaceWhiteButton.classList.toggle('active', debugPlacementColor === 'white');
+            debugPlaceWhiteButton.setAttribute('aria-pressed', debugPlacementColor === 'white' ? 'true' : 'false');
+        }
+        if (debugPlaceBlackButton) {
+            debugPlaceBlackButton.classList.toggle('active', debugPlacementColor === 'black');
+            debugPlaceBlackButton.setAttribute('aria-pressed', debugPlacementColor === 'black' ? 'true' : 'false');
+        }
         if (selectedSource !== null && !legalSources().has(selectedSource)) {
             selectedSource = null;
         }
@@ -1618,6 +1640,31 @@
                 showError(error.message);
             }
         });
+    }
+
+    async function submitDebugPlacement(point) {
+        try {
+            showError('');
+            const nextGame = await requestJson(debugPlaceCheckerUrl, {
+                method: 'POST',
+                body: { color: debugPlacementColor, point },
+            });
+            selectedSource = null;
+            receiveGameState(nextGame, 'own');
+        } catch (error) {
+            showError(error.message);
+        }
+    }
+
+    function toggleDebugPlacement(color) {
+        debugPlacementColor = debugPlacementColor === color ? null : color;
+        selectedSource = null;
+        render();
+    }
+
+    if (debugGameTools && debugPlaceWhiteButton && debugPlaceBlackButton) {
+        debugPlaceWhiteButton.addEventListener('click', () => toggleDebugPlacement('white'));
+        debugPlaceBlackButton.addEventListener('click', () => toggleDebugPlacement('black'));
     }
 
     loadState();
