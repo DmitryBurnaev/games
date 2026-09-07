@@ -134,7 +134,7 @@ body {
     text-align: right;
 }
 
-.debug-placement .btn.active {
+.debug-action-button.active {
     box-shadow: 0 0 0 3px rgba(13, 110, 253, .2);
 }
 
@@ -244,6 +244,68 @@ body {
     height: 36px;
     padding: 0;
     line-height: 1;
+}
+
+.debug-actions {
+    position: fixed;
+    top: 5rem;
+    left: 1rem;
+    z-index: 1040;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: .5rem;
+}
+
+.debug-actions.d-none {
+    display: none;
+}
+
+.debug-action-button {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 1px solid rgba(43, 28, 15, .22);
+    background: rgba(255, 255, 255, .92);
+    box-shadow: 0 8px 22px rgba(43, 28, 15, .16);
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.debug-action-button:hover,
+.debug-action-button:focus-visible {
+    border-color: rgba(13, 110, 253, .5);
+    background: #eef6ff;
+}
+
+.debug-action-tooltip {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + .6rem);
+    z-index: 1;
+    width: max-content;
+    max-width: min(320px, calc(100vw - 6rem));
+    padding: .45rem .65rem;
+    transform: translateY(-50%);
+    border-radius: 6px;
+    background: rgba(43, 28, 15, .94);
+    color: #fff;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.25;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s ease;
+    visibility: hidden;
+}
+
+.debug-action-button:hover .debug-action-tooltip,
+.debug-action-button:focus-visible .debug-action-tooltip {
+    opacity: 1;
+    visibility: visible;
 }
 
 .quick-notification-actions {
@@ -786,6 +848,29 @@ body {
     .board-row {
         grid-template-columns: repeat(12, minmax(24px, 1fr));
         gap: .2rem;
+    }
+
+    .debug-actions {
+        top: auto;
+        right: .75rem;
+        bottom: 3.75rem;
+        left: .75rem;
+        flex-flow: row wrap;
+        max-width: calc(100vw - 1.5rem);
+        transform: none;
+    }
+
+    .debug-action-button {
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+
+    .debug-action-tooltip {
+        top: auto;
+        bottom: calc(100% + .6rem);
+        left: 0;
+        transform: none;
     }
 
     .quick-notification-actions {

@@ -322,8 +322,16 @@ def blocking_event_points(board: Board, color: Game.Color) -> list[int]:
         points = path[start : start + 6]
         if not all(point_has_color(board, point, color) for point in points):
             continue
+        opponent_path = PATHS[opponent]
+        opponent_positions = sorted(opponent_path.index(point) for point in points)
+        block_end = opponent_positions[0]
+        for position in opponent_positions[1:]:
+            if position != block_end + 1:
+                break
+            block_end = position
         has_opponent_ahead = any(
-            point_has_color(board, point, opponent) for point in path[start + 6 :]
+            point_has_color(board, point, opponent)
+            for point in opponent_path[block_end + 1 :]
         )
         if not has_opponent_ahead:
             return points
@@ -386,7 +394,7 @@ def place_debug_checker(
     color: str,
     point: int,
 ) -> None:
-    """Relocate one checker to a point while preserving per-color totals."""
+    """Relocate a checker and start a fresh debug turn for the requesting player."""
     if game.status != Game.Status.ACTIVE:
         raise GameError("Расставлять шашки можно только в активной игре.")
     if not game.color_for(user):
@@ -434,7 +442,27 @@ def place_debug_checker(
 
     game.board = board
     game.borne_off = borne_off
-    game.save(update_fields=["board", "borne_off", "updated_at"])
+    # A hand-edited board cannot safely share the previous unfinished turn:
+    # its dice, head counter and undo record refer to the old position.  This
+    # normalization is deliberately confined to the debug-only action above;
+    # regular moves retain their normal turn and undo behaviour.
+    game.current_player = user
+    game.dice = []
+    game.remaining_moves = []
+    game.has_rolled = False
+    game.head_moves_this_turn = 0
+    game.save(
+        update_fields=[
+            "board",
+            "borne_off",
+            "current_player",
+            "dice",
+            "remaining_moves",
+            "has_rolled",
+            "head_moves_this_turn",
+            "updated_at",
+        ]
+    )
 
 
 def remove_color_from_board(board: Board, color: Game.Color) -> int:

@@ -71,13 +71,6 @@
                 <section id="debug-panel" class="debug-panel mb-3" aria-label="Debug">
                     <div class="debug-panel-title">Debug</div>
                     <dl id="debug-statistics"></dl>
-                    <div class="debug-placement mt-2">
-                        <div class="small text-secondary mb-1">Поставить шашку: выберите цвет и пункт</div>
-                        <div class="btn-group btn-group-sm w-100" role="group" aria-label="Цвет шашки для расстановки">
-                            <button id="debug-place-white-button" class="btn btn-outline-secondary" type="button">Белая</button>
-                            <button id="debug-place-black-button" class="btn btn-outline-dark" type="button">Черная</button>
-                        </div>
-                    </div>
                 </section>
             {% endif %}
 
@@ -87,13 +80,6 @@
                     <button id="undo-button" class="btn btn-outline-warning" type="button" aria-label="Отменить мой ход" title="Отменить мой ход">👈</button>
                     <button id="end-turn-button" class="btn btn-outline-secondary" type="button">Завершить ход</button>
                 </div>
-                {% if debug_game_tools %}
-                    <button id="prepare-bear-off-button" class="btn btn-outline-info btn-sm" type="button">В дом для теста</button>
-                    <button id="prepare-victory-button" class="btn btn-outline-success btn-sm" type="button">Тест победы</button>
-                    <button id="prepare-final-double-button" class="btn btn-outline-success btn-sm" type="button">Тест финального дубля</button>
-                    <button id="prepare-extra-head-move-button" class="btn btn-outline-dark btn-sm" type="button">Тест головы 5/5</button>
-                    <button id="prepare-blocking-event-button" class="btn btn-outline-danger btn-sm" type="button">Тест блока 6</button>
-                {% endif %}
             </div>
 
             <div id="move-panel" class="move-panel"></div>
@@ -118,6 +104,18 @@
         </section>
     </div>
 
+    {% if debug_game_tools %}
+        <div id="debug-actions" class="debug-actions{% if game.status != 'active' %} d-none{% endif %}" aria-label="Отладочные действия">
+            <button id="debug-place-white-button" class="btn btn-light debug-action-button" type="button" aria-label="Поставить белую шашку" aria-describedby="debug-place-white-tooltip">⚪<span id="debug-place-white-tooltip" class="debug-action-tooltip" role="tooltip">Поставить белую шашку</span></button>
+            <button id="debug-place-black-button" class="btn btn-light debug-action-button" type="button" aria-label="Поставить чёрную шашку" aria-describedby="debug-place-black-tooltip">⚫<span id="debug-place-black-tooltip" class="debug-action-tooltip" role="tooltip">Поставить чёрную шашку</span></button>
+            <button id="prepare-bear-off-button" class="btn btn-light debug-action-button" type="button" aria-label="В дом для теста" aria-describedby="prepare-bear-off-tooltip">🏠<span id="prepare-bear-off-tooltip" class="debug-action-tooltip" role="tooltip">В дом для теста</span></button>
+            <button id="prepare-victory-button" class="btn btn-light debug-action-button" type="button" aria-label="Тест победы" aria-describedby="prepare-victory-tooltip">🏆<span id="prepare-victory-tooltip" class="debug-action-tooltip" role="tooltip">Тест победы</span></button>
+            <button id="prepare-final-double-button" class="btn btn-light debug-action-button" type="button" aria-label="Тест финального дубля" aria-describedby="prepare-final-double-tooltip">🎲<span id="prepare-final-double-tooltip" class="debug-action-tooltip" role="tooltip">Тест финального дубля</span></button>
+            <button id="prepare-extra-head-move-button" class="btn btn-light debug-action-button" type="button" aria-label="Тест головы 5/5" aria-describedby="prepare-extra-head-move-tooltip">5️⃣<span id="prepare-extra-head-move-tooltip" class="debug-action-tooltip" role="tooltip">Тест головы 5/5</span></button>
+            <button id="prepare-blocking-event-button" class="btn btn-light debug-action-button" type="button" aria-label="Тест блока 6" aria-describedby="prepare-blocking-event-tooltip">🧱<span id="prepare-blocking-event-tooltip" class="debug-action-tooltip" role="tooltip">Тест блока 6</span></button>
+        </div>
+    {% endif %}
+
     {% if quick_notifications_enabled %}
         <div id="quick-notification-actions" class="quick-notification-actions{% if game.status != 'active' %} d-none{% endif %}" aria-label="Быстрые уведомления">
             {% for notification in quick_notification_options %}
@@ -136,5 +134,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=71"></script>
+<script src="{% static 'backgammon/game.js' %}?v=73"></script>
 {% endblock %}
