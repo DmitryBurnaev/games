@@ -1018,12 +1018,12 @@ class GameRulesTests(TestCase):
         game.refresh_from_db()
         self.assertEqual(game.current_player, self.black)
 
-    def test_blocking_event_detects_opponent_only_behind_home_block(self) -> None:
-        """An opponent behind a home block is not mistaken for one ahead."""
+    def test_blocking_event_detects_opponent_before_home_block(self) -> None:
+        """An opponent that has not passed a home block does not make it legal."""
         board = [None for _ in range(24)]
         for point in range(18, 24):
             board[point] = {"color": Game.Color.WHITE, "count": 1}
-        board[0] = {"color": Game.Color.BLACK, "count": 15}
+        board[12] = {"color": Game.Color.BLACK, "count": 15}
 
         self.assertEqual(
             blocking_event_points(board, Game.Color.WHITE),
@@ -1035,7 +1035,7 @@ class GameRulesTests(TestCase):
         board = [None for _ in range(24)]
         for point in range(16, 23):
             board[point] = {"color": Game.Color.WHITE, "count": 1}
-        board[3] = {"color": Game.Color.BLACK, "count": 15}
+        board[12] = {"color": Game.Color.BLACK, "count": 15}
 
         self.assertEqual(
             blocking_event_points(board, Game.Color.WHITE),
@@ -1056,7 +1056,6 @@ class GameRulesTests(TestCase):
         board = [None for _ in range(24)]
         for point in [22, 23, 0, 1, 2, 3]:
             board[point] = {"color": Game.Color.BLACK, "count": 1}
-        board[12] = {"color": Game.Color.WHITE, "count": 1}
 
         self.assertEqual(
             blocking_event_points(board, Game.Color.BLACK),
@@ -1078,7 +1077,7 @@ class GameRulesTests(TestCase):
         game.board[10] = {"color": Game.Color.WHITE, "count": 9}
         for point in range(18, 24):
             game.board[point] = {"color": Game.Color.WHITE, "count": 1}
-        game.board[0] = {"color": Game.Color.BLACK, "count": 15}
+        game.board[12] = {"color": Game.Color.BLACK, "count": 15}
         game.dice = [1]
         game.remaining_moves = []
         game.save()
@@ -1102,6 +1101,44 @@ class GameRulesTests(TestCase):
         self.assertFalse(payload["blocking_event"])
         self.assertTrue(payload["can_end_turn"])
         self.assertEqual(response.status_code, 200)
+
+    def test_game_103_black_block_rejects_white_checker_before_it(self) -> None:
+        """Regression: white point 9 has not passed black points 15 through 20."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.black,
+            status=Game.Status.ACTIVE,
+            dice=[5],
+            remaining_moves=[],
+            has_rolled=True,
+        )
+        game.board = [None for _ in range(24)]
+        game.board[0] = {"color": Game.Color.WHITE, "count": 14}
+        game.board[9] = {"color": Game.Color.WHITE, "count": 1}
+        game.board[8] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[12] = {"color": Game.Color.BLACK, "count": 6}
+        for point in range(15, 21):
+            game.board[point] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[22] = {"color": Game.Color.BLACK, "count": 1}
+        game.board[23] = {"color": Game.Color.BLACK, "count": 1}
+        game.save()
+
+        payload = serialize_game(game, self.black)
+
+        self.assertEqual(payload["blocking_event_points"], [15, 16, 17, 18, 19, 20])
+        self.assertFalse(payload["can_end_turn"])
+        with self.assertRaisesMessage(GameError, "разбейте блок"):
+            finish_blocked_turn(game, self.black)
+
+    def test_game_103_block_allows_white_checker_that_has_passed_it(self) -> None:
+        """A white checker past the black block still permits turn completion."""
+        board = [None for _ in range(24)]
+        for point in range(15, 21):
+            board[point] = {"color": Game.Color.BLACK, "count": 1}
+        board[21] = {"color": Game.Color.WHITE, "count": 1}
+
+        self.assertEqual(blocking_event_points(board, Game.Color.BLACK), [])
 
     def test_move_markers_live_until_opponent_rolls(self) -> None:
         """Moved-checker markers transfer to the opponent until their roll."""
@@ -2069,6 +2106,8 @@ class GameDebugToolsTests(TestCase):
         self.assertContains(response, "Тест блока 6")
         self.assertContains(response, 'id="debug-panel"')
         self.assertContains(response, 'id="debug-statistics"')
+        self.assertContains(response, 'id="debug-actions"')
+        self.assertContains(response, 'class="debug-actions')
         self.assertContains(response, "👈")
         self.assertContains(response, 'data-debug-tools="1"')
         self.assertContains(response, "data-prepare-bear-off-url")
@@ -2078,6 +2117,8 @@ class GameDebugToolsTests(TestCase):
         self.assertContains(response, "data-debug-place-checker-url")
         self.assertContains(response, 'id="debug-place-white-button"')
         self.assertContains(response, 'id="debug-place-black-button"')
+        self.assertContains(response, 'class="btn btn-light debug-action-button"')
+        self.assertContains(response, 'class="debug-action-tooltip"')
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
     def test_debug_state_includes_raw_move_history_without_aggregates(self) -> None:
@@ -2272,6 +2313,34 @@ class GameDebugToolsTests(TestCase):
             )
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
+    def test_debug_placement_resets_only_the_debug_turn_context(self) -> None:
+        """Manual setup starts a fresh turn and disables undo of the old board."""
+        self.game.dice = [1, 2]
+        self.game.remaining_moves = [1, 2]
+        self.game.has_rolled = True
+        self.game.head_moves_this_turn = 0
+        self.game.save()
+        apply_move(self.game, self.white, 0, 1)
+        original_move_count = self.game.moves.count()
+
+        response = self.client.post(
+            reverse("backgammon:debug_place_checker", args=[self.game.pk]),
+            data=json.dumps({"color": Game.Color.WHITE, "point": 5}),
+            content_type="application/json",
+        )
+        self.game.refresh_from_db()
+        payload = serialize_game(self.game, self.white)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.game.current_player, self.white)
+        self.assertEqual(self.game.dice, [])
+        self.assertEqual(self.game.remaining_moves, [])
+        self.assertFalse(self.game.has_rolled)
+        self.assertEqual(self.game.head_moves_this_turn, 0)
+        self.assertFalse(payload["can_undo"])
+        self.assertEqual(self.game.moves.count(), original_move_count)
+
+    @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
     @patch("backgammon.views.notify_game_updated")
     def test_debug_placement_publishes_realtime_update_after_commit(
         self,
@@ -2295,9 +2364,7 @@ class GameDebugToolsTests(TestCase):
         self.game.remaining_moves = []
         self.game.has_rolled = True
         self.game.save()
-        placements = [(Game.Color.BLACK, 0)] + [
-            (Game.Color.WHITE, point) for point in range(18, 24)
-        ]
+        placements = [(Game.Color.WHITE, point) for point in range(18, 24)]
         for color, point in placements:
             response = self.client.post(
                 reverse("backgammon:debug_place_checker", args=[self.game.pk]),
@@ -2306,6 +2373,14 @@ class GameDebugToolsTests(TestCase):
             )
             self.assertEqual(response.status_code, 200)
 
+        # A debug placement intentionally starts a fresh turn.  Recreate the
+        # rolled, no-move-left state that is required to exercise end-turn
+        # blocking validation.
+        self.game.refresh_from_db()
+        self.game.dice = [1]
+        self.game.remaining_moves = []
+        self.game.has_rolled = True
+        self.game.save()
         self.game.refresh_from_db()
         payload = serialize_game(self.game, self.white)
         end_turn_response = self.client.post(
@@ -2343,6 +2418,7 @@ class GameDebugToolsTests(TestCase):
         self.assertNotContains(detail_response, "Тест головы 5/5")
         self.assertNotContains(detail_response, "Тест блока 6")
         self.assertNotContains(detail_response, 'id="debug-panel"')
+        self.assertNotContains(detail_response, 'id="debug-actions"')
         self.assertContains(detail_response, 'data-debug-tools="0"')
         self.assertNotContains(detail_response, "data-prepare-bear-off-url")
         self.assertNotContains(detail_response, "data-prepare-final-double-url")

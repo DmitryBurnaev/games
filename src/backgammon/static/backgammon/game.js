@@ -41,6 +41,7 @@
     const movePanel = document.getElementById('move-panel');
     const finishedStatsPanel = document.getElementById('finished-stats-panel');
     const debugStatistics = document.getElementById('debug-statistics');
+    const debugActions = document.getElementById('debug-actions');
     const controlPanel = document.getElementById('control-panel');
     const rollButton = document.getElementById('roll-button');
     const undoButton = document.getElementById('undo-button');
@@ -1384,7 +1385,12 @@
     }
 
     function isViewerTurn() {
-        return game.status === 'active' && (game.can_roll || game.can_end_turn || game.legal_moves.length > 0);
+        return game.status === 'active' && (
+            game.can_roll
+            || game.can_end_turn
+            || game.blocking_event
+            || game.legal_moves.length > 0
+        );
     }
 
     function renderTurnState() {
@@ -1436,6 +1442,12 @@
             quickNotificationActions.classList.toggle(
                 'd-none',
                 !quickNotificationsEnabled || !game.can_send_quick_notifications,
+            );
+        }
+        if (debugActions) {
+            debugActions.classList.toggle(
+                'd-none',
+                game.status !== 'active' || !game.viewer_color,
             );
         }
         quickNotificationButtons.forEach((button) => {
