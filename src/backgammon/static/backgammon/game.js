@@ -105,6 +105,7 @@
     let heartbeatWatchdogTimer = null;
     let reconnectTimer = null;
     let reconnectAttempt = 0;
+    let realtimeDisabled = false;
     const movementPaths = {
         white: Array.from({ length: 24 }, (_, index) => index),
         black: Array.from({ length: 12 }, (_, offset) => 12 + offset).concat(
@@ -288,6 +289,9 @@
             return;
         }
         latestStateUpdatedAt = stateVersion(nextGame) || latestStateUpdatedAt;
+        if (nextGame.status === 'finished') {
+            disableRealtime();
+        }
         applyGameState(nextGame, defaultAnimationSpeed, skipUnchangedRender);
     }
 
@@ -301,7 +305,7 @@
     }
 
     function startPollingFallback() {
-        if (pollTimer) {
+        if (realtimeDisabled || pollTimer) {
             return;
         }
         pollTimer = window.setInterval(loadState, pollIntervalMs);
@@ -326,13 +330,31 @@
         }
     }
 
+    function disableRealtime() {
+        realtimeDisabled = true;
+        stopPollingFallback();
+        clearRealtimeTimers();
+        if (reconnectTimer) {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        const socket = stateSocket;
+        stateSocket = null;
+        if (
+            socket
+            && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)
+        ) {
+            socket.close();
+        }
+    }
+
     function markRealtimeAlive() {
         latestRealtimeMessageAt = Date.now();
         stopPollingFallback();
     }
 
     function scheduleRealtimeReconnect() {
-        if (reconnectTimer) {
+        if (realtimeDisabled || reconnectTimer) {
             return;
         }
         const delay = reconnectDelaysMs[Math.min(reconnectAttempt, reconnectDelaysMs.length - 1)];
@@ -344,8 +366,14 @@
     }
 
     function startRealtimeHeartbeat(socket) {
+        if (realtimeDisabled) {
+            return;
+        }
         clearRealtimeTimers();
         heartbeatTimer = window.setInterval(() => {
+            if (realtimeDisabled) {
+                return;
+            }
             if (socket.readyState !== WebSocket.OPEN) {
                 startPollingFallback();
                 return;
@@ -353,6 +381,9 @@
             socket.send(JSON.stringify({ type: 'ping' }));
         }, heartbeatIntervalMs);
         heartbeatWatchdogTimer = window.setInterval(() => {
+            if (realtimeDisabled) {
+                return;
+            }
             if (Date.now() - latestRealtimeMessageAt <= heartbeatTimeoutMs) {
                 return;
             }
@@ -364,6 +395,9 @@
     }
 
     function connectStateSocket() {
+        if (realtimeDisabled) {
+            return;
+        }
         const url = stateWebSocketUrl();
         if (!url) {
             startPollingFallback();
@@ -386,6 +420,10 @@
 
         socket.addEventListener('open', () => {
             window.clearTimeout(connectFallbackTimer);
+            if (realtimeDisabled) {
+                socket.close();
+                return;
+            }
             reconnectAttempt = 0;
             latestRealtimeMessageAt = Date.now();
             startRealtimeHeartbeat(socket);
@@ -415,12 +453,18 @@
                 stateSocket = null;
             }
             clearRealtimeTimers();
+            if (realtimeDisabled) {
+                return;
+            }
             startPollingFallback();
             scheduleRealtimeReconnect();
         });
 
         socket.addEventListener('error', () => {
             window.clearTimeout(connectFallbackTimer);
+            if (realtimeDisabled) {
+                return;
+            }
             startPollingFallback();
             socket.close();
         });
@@ -1679,7 +1723,21 @@
         debugPlaceBlackButton.addEventListener('click', () => toggleDebugPlacement('black'));
     }
 
-    loadState();
+    async function initializeGame() {
+        try {
+            const nextGame = await requestJson(stateUrl, { method: 'GET' });
+            receiveGameState(nextGame, 'auto', true);
+            if (nextGame.status !== 'finished') {
+                connectStateSocket();
+            }
+        } catch (error) {
+            showError(error.message);
+            if (app.dataset.initialStatus !== 'finished') {
+                connectStateSocket();
+            }
+        }
+    }
+
+    initializeGame();
     window.setInterval(renderCurrentGameDuration, 1000);
-    connectStateSocket();
 }());

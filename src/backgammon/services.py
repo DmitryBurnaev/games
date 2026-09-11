@@ -9,8 +9,8 @@ from django.utils import timezone
 
 from .app_settings import (
     DICE_MODE_PLAYER_BAG,
-    backgammon_debug_tools,
     backgammon_dice_mode,
+    backgammon_game_runtime_settings,
     backgammon_notification_display_ms,
     backgammon_quick_notifications_enabled,
 )
@@ -116,32 +116,42 @@ def datetime_payload(value: Any) -> str | None:
     return value.isoformat() if value else None
 
 
-def terminal_roll_for_statistics(game: Game) -> GameMove | None:
-    """Return the winning roll, which is excluded from finished-game statistics."""
-    if game.status != Game.Status.FINISHED:
-        return None
-
-    finish = (
-        game.moves.filter(action=GameMove.Action.FINISH)
-        .order_by("-created_at", "-pk")
-        .first()
-    )
-    if not finish or not finish.dice:
-        return None
-    return (
-        game.moves.filter(
-            action=GameMove.Action.ROLL,
-            player=finish.player,
-            pk__lt=finish.pk,
+def game_history(game: Game) -> list[dict[str, Any]]:
+    """Load every event needed by a game projection without board snapshots."""
+    return list(
+        game.moves.order_by("created_at", "pk").values(
+            "pk",
+            "player_id",
+            "action",
+            "dice",
+            "source_point",
+            "target_point",
+            "distance",
         )
-        .order_by("-created_at", "-pk")
-        .first()
     )
 
 
-def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
-    """Return rolled points and double usage grouped by checker color."""
-    statistics = {
+def history_color(game: Game, player_id: int | None) -> Game.Color | None:
+    """Resolve a checker color from a history row without loading its player."""
+    if player_id == game.white_player_id:
+        return Game.Color.WHITE
+    if player_id == game.black_player_id:
+        return Game.Color.BLACK
+    return None
+
+
+def valid_roll_dice(value: Any) -> list[int] | None:
+    """Return a valid two-die roll while retaining legacy malformed-row handling."""
+    if not isinstance(value, list) or len(value) != 2:
+        return None
+    return value if all(isinstance(die, int) for die in value) else None
+
+
+def history_statistics(
+    game: Game, events: list[dict[str, Any]]
+) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]]:
+    """Calculate dice and skipped-move statistics in one ordered history pass."""
+    dice_statistics = {
         color: {
             "total_points": 0,
             "double_rolls": 0,
@@ -150,80 +160,102 @@ def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
         }
         for color in Game.Color.values
     }
-    moves = game.moves.select_related("player")
-    terminal_roll = terminal_roll_for_statistics(game)
-    for move in moves.filter(action=GameMove.Action.ROLL):
-        if terminal_roll and move.pk == terminal_roll.pk:
-            continue
-        if not isinstance(move.dice, list) or len(move.dice) != 2:
-            continue
-        if not all(isinstance(die, int) for die in move.dice):
-            continue
-        color = game.color_for(move.player)
-        if not color:
-            continue
-        rolled_points = sum(move.dice)
-        if move.dice[0] == move.dice[1]:
-            rolled_points *= 2
-            statistics[color]["double_rolls"] += 1
-            statistics[color]["double_moves_available"] += 4
-        statistics[color]["total_points"] += rolled_points
+    skipped_statistics = {
+        color: {"turns": 0, "moves": 0, "points": 0} for color in Game.Color.values
+    }
+    current_roll: dict[str, Any] | None = None
+    used_distances: list[int] = []
+    latest_rolls: dict[int, dict[str, Any]] = {}
+    double_usage_before_roll: dict[int, dict[str, int]] = {}
 
-    for move in moves.filter(
-        action__in=[GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
-    ):
-        if terminal_roll and move.pk > terminal_roll.pk:
-            continue
-        if not isinstance(move.dice, list) or not move.dice:
-            continue
-        if not all(isinstance(die, int) and die == move.dice[0] for die in move.dice):
-            continue
-        color = game.color_for(move.player)
-        if color:
-            statistics[color]["double_moves_used"] += 1
-    return statistics
+    def count_unspent_dice(roll: dict[str, Any] | None) -> None:
+        if not roll:
+            return
+        color = history_color(game, roll["player_id"])
+        dice = valid_roll_dice(roll["dice"])
+        if not color or not dice:
+            return
+        available_dice = [dice[0]] * 4 if dice[0] == dice[1] else dice[:]
+        for distance in used_distances:
+            if distance in available_dice:
+                available_dice.remove(distance)
+        skipped_statistics[color]["turns"] += len(available_dice)
+        skipped_statistics[color]["moves"] += len(available_dice)
+        skipped_statistics[color]["points"] += sum(available_dice)
+
+    for event in events:
+        action = event["action"]
+        player_id = event["player_id"]
+        color = history_color(game, player_id)
+        if action == GameMove.Action.ROLL:
+            count_unspent_dice(current_roll)
+            current_roll = event
+            used_distances = []
+            latest_rolls[player_id] = event
+            double_usage_before_roll[event["pk"]] = {
+                color: dice_statistics[color]["double_moves_used"]
+                for color in Game.Color.values
+            }
+            dice = valid_roll_dice(event["dice"])
+            if not color or not dice:
+                continue
+            rolled_points = sum(dice)
+            if dice[0] == dice[1]:
+                rolled_points *= 2
+                dice_statistics[color]["double_rolls"] += 1
+                dice_statistics[color]["double_moves_available"] += 4
+            dice_statistics[color]["total_points"] += rolled_points
+        elif (
+            current_roll
+            and player_id == current_roll["player_id"]
+            and action in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
+            and isinstance(event["distance"], int)
+        ):
+            used_distances.append(event["distance"])
+
+        if action in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]:
+            dice = event["dice"]
+            if (
+                color
+                and isinstance(dice, list)
+                and dice
+                and all(isinstance(die, int) and die == dice[0] for die in dice)
+            ):
+                dice_statistics[color]["double_moves_used"] += 1
+
+        if (
+            game.status == Game.Status.FINISHED
+            and action == GameMove.Action.FINISH
+            and event["dice"]
+        ):
+            terminal_roll = latest_rolls.get(player_id)
+            if not terminal_roll:
+                continue
+            terminal_dice = valid_roll_dice(terminal_roll["dice"])
+            terminal_color = history_color(game, terminal_roll["player_id"])
+            if terminal_dice and terminal_color:
+                rolled_points = sum(terminal_dice)
+                if terminal_dice[0] == terminal_dice[1]:
+                    rolled_points *= 2
+                    dice_statistics[terminal_color]["double_rolls"] -= 1
+                    dice_statistics[terminal_color]["double_moves_available"] -= 4
+                dice_statistics[terminal_color]["total_points"] -= rolled_points
+            for color_name, used_count in double_usage_before_roll[
+                terminal_roll["pk"]
+            ].items():
+                dice_statistics[color_name]["double_moves_used"] = used_count
+
+    return dice_statistics, skipped_statistics
+
+
+def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
+    """Return rolled points and double usage grouped by checker color."""
+    return history_statistics(game, game_history(game))[0]
 
 
 def skipped_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     """Return unspent dice moves and points grouped by rolling color."""
-    statistics = {
-        color: {"turns": 0, "moves": 0, "points": 0} for color in Game.Color.values
-    }
-    current_roll = None
-    used_distances: list[int] = []
-
-    def count_unspent_dice(roll: GameMove | None) -> None:
-        if not roll:
-            return
-        color = game.color_for(roll.player)
-        if not color or not isinstance(roll.dice, list) or len(roll.dice) != 2:
-            return
-        if not all(isinstance(die, int) for die in roll.dice):
-            return
-        available_dice = (
-            [roll.dice[0]] * 4 if roll.dice[0] == roll.dice[1] else roll.dice[:]
-        )
-        for distance in used_distances:
-            if distance in available_dice:
-                available_dice.remove(distance)
-        statistics[color]["turns"] += len(available_dice)
-        statistics[color]["moves"] += len(available_dice)
-        statistics[color]["points"] += sum(available_dice)
-
-    for move in game.moves.order_by("created_at", "pk"):
-        if move.action == GameMove.Action.ROLL:
-            count_unspent_dice(current_roll)
-            current_roll = move
-            used_distances = []
-        elif (
-            current_roll
-            and move.player_id == current_roll.player_id
-            and move.action in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
-            and isinstance(move.distance, int)
-        ):
-            used_distances.append(move.distance)
-
-    return statistics
+    return history_statistics(game, game_history(game))[1]
 
 
 def skipped_turns_by_color(game: Game) -> dict[str, int]:
@@ -840,6 +872,28 @@ def checker_moves_for_current_roll(game: Game, user: Any) -> QuerySet[GameMove]:
     return queryset.order_by("created_at", "pk")
 
 
+def checker_move_events_for_current_roll(
+    events: list[dict[str, Any]], player_id: int
+) -> list[dict[str, Any]]:
+    """Return one player's checker events after their latest recorded roll."""
+    latest_roll_pk = max(
+        (
+            event["pk"]
+            for event in events
+            if event["player_id"] == player_id
+            and event["action"] == GameMove.Action.ROLL
+        ),
+        default=None,
+    )
+    return [
+        event
+        for event in events
+        if event["player_id"] == player_id
+        and event["action"] in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
+        and (latest_roll_pk is None or event["pk"] > latest_roll_pk)
+    ]
+
+
 def move_marker_player(game: Game, viewer: Any) -> Any | None:
     """Return whose moved checkers should be highlighted for a viewer."""
     if game.status != Game.Status.ACTIVE or not game.color_for(viewer):
@@ -854,21 +908,28 @@ def move_marker_player(game: Game, viewer: Any) -> Any | None:
 
 def last_move_markers(game: Game, viewer: Any) -> list[MarkerPayload]:
     """Group all moved-checker highlights visible to the viewer."""
+    return last_move_markers_from_events(game, viewer, game_history(game))
+
+
+def last_move_markers_from_events(
+    game: Game, viewer: Any, events: list[dict[str, Any]]
+) -> list[MarkerPayload]:
+    """Group visible highlights using the history already loaded for a projection."""
     marker_player = move_marker_player(game, viewer)
     if not marker_player:
         return []
 
     color = game.color_for(marker_player)
     markers_by_target: dict[int, MarkerPayload] = {}
-    for move in checker_moves_for_current_roll(game, marker_player):
-        if move.target_point is None:
+    for event in checker_move_events_for_current_roll(events, marker_player.id):
+        if event["target_point"] is None:
             continue
         marker = markers_by_target.setdefault(
-            move.target_point,
+            event["target_point"],
             {
                 "player": player_payload(marker_player),
                 "color": color,
-                "target": move.target_point,
+                "target": event["target_point"],
                 "count": 0,
                 "moves": [],
             },
@@ -876,11 +937,11 @@ def last_move_markers(game: Game, viewer: Any) -> list[MarkerPayload]:
         marker["count"] += 1
         marker["moves"].append(
             {
-                "id": move.id,
-                "source": move.source_point,
-                "target": move.target_point,
-                "distance": move.distance,
-                "action": move.action,
+                "id": event["pk"],
+                "source": event["source_point"],
+                "target": event["target_point"],
+                "distance": event["distance"],
+                "action": event["action"],
             }
         )
 
@@ -889,6 +950,13 @@ def last_move_markers(game: Game, viewer: Any) -> list[MarkerPayload]:
 
 def last_move_steps(game: Game, viewer: Any) -> list[MovePayload]:
     """Return visible checker moves in chronological order for UI animation."""
+    return last_move_steps_from_events(game, viewer, game_history(game))
+
+
+def last_move_steps_from_events(
+    game: Game, viewer: Any, events: list[dict[str, Any]]
+) -> list[MovePayload]:
+    """Return visible animation steps from the shared projection history."""
     marker_player = move_marker_player(game, viewer)
     if not marker_player:
         return []
@@ -896,15 +964,15 @@ def last_move_steps(game: Game, viewer: Any) -> list[MovePayload]:
     color = game.color_for(marker_player)
     return [
         {
-            "id": move.id,
+            "id": move["pk"],
             "player": player_payload(marker_player),
             "color": color,
-            "source": move.source_point,
-            "target": move.target_point,
-            "distance": move.distance,
-            "action": move.action,
+            "source": move["source_point"],
+            "target": move["target_point"],
+            "distance": move["distance"],
+            "action": move["action"],
         }
-        for move in checker_moves_for_current_roll(game, marker_player)
+        for move in checker_move_events_for_current_roll(events, marker_player.id)
     ]
 
 
@@ -927,12 +995,19 @@ def quick_notification_payload(
 
 
 def quick_notifications_for_viewer(
-    game: Game, viewer: Any
+    game: Game,
+    viewer: Any,
+    *,
+    enabled: bool | None = None,
+    display_ms: int | None = None,
 ) -> list[NotificationPayload]:
     """Return recent notifications addressed to the viewer."""
-    if not backgammon_quick_notifications_enabled() or not game.color_for(viewer):
+    if enabled is None:
+        enabled = backgammon_quick_notifications_enabled()
+    if not enabled or game.status != Game.Status.ACTIVE or not game.color_for(viewer):
         return []
-    display_ms = backgammon_notification_display_ms()
+    if display_ms is None:
+        display_ms = backgammon_notification_display_ms()
     visible_since = timezone.now() - timedelta(milliseconds=display_ms)
     notifications = (
         game.notifications.select_related("sender")
@@ -977,16 +1052,37 @@ def create_quick_notification(
 
 def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     """Serialize a game into the JSON shape consumed by the browser UI."""
+    finished = game.status == Game.Status.FINISHED
+    runtime_settings = backgammon_game_runtime_settings(finished=finished)
+    events = game_history(game)
+    dice_statistics, skipped_statistics = history_statistics(game, events)
     viewer_color = game.color_for(viewer)
-    viewer_moves = legal_moves(game, viewer)
-    dice_statistics = dice_statistics_by_color(game)
-    skipped_statistics = skipped_statistics_by_color(game)
+    viewer_moves = (
+        legal_moves(game, viewer) if game.status == Game.Status.ACTIVE else []
+    )
     viewer_blocking_event = (
         game.status == Game.Status.ACTIVE
         and game.current_player_id == viewer.id
         and game.has_rolled
         and bool(viewer_color)
         and has_blocking_event(game.board, viewer_color)
+    )
+    last_move_markers_payload = (
+        last_move_markers_from_events(game, viewer, events)
+        if game.status == Game.Status.ACTIVE
+        else []
+    )
+    last_move_steps_payload = (
+        last_move_steps_from_events(game, viewer, events)
+        if game.status == Game.Status.ACTIVE
+        else []
+    )
+    can_undo = can_undo_last_move_from_events(game, viewer, events)
+    can_send_quick_notifications = (
+        runtime_settings.quick_notifications_enabled
+        and game.status == Game.Status.ACTIVE
+        and bool(viewer_color)
+        and bool(game.opponent_for(viewer))
     )
     payload = {
         "id": game.id,
@@ -1045,42 +1141,55 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
             and not viewer_moves
             and not viewer_blocking_event
         ),
-        "can_undo": can_undo_last_move(game, viewer),
-        "can_send_quick_notifications": (
-            backgammon_quick_notifications_enabled()
-            and game.status == Game.Status.ACTIVE
-            and bool(viewer_color)
-            and bool(game.opponent_for(viewer))
+        "can_undo": can_undo,
+        "can_send_quick_notifications": can_send_quick_notifications,
+        "notification_display_ms": runtime_settings.notification_display_ms,
+        "quick_notifications": quick_notifications_for_viewer(
+            game,
+            viewer,
+            enabled=runtime_settings.quick_notifications_enabled,
+            display_ms=runtime_settings.notification_display_ms,
         ),
-        "notification_display_ms": backgammon_notification_display_ms(),
-        "quick_notifications": quick_notifications_for_viewer(game, viewer),
-        "last_move_marker": last_move_marker(game, viewer),
-        "last_move_markers": last_move_markers(game, viewer),
-        "last_move_steps": last_move_steps(game, viewer),
+        "last_move_marker": (
+            last_move_markers_payload[-1] if last_move_markers_payload else None
+        ),
+        "last_move_markers": last_move_markers_payload,
+        "last_move_steps": last_move_steps_payload,
         "legal_moves": viewer_moves,
     }
-    if backgammon_debug_tools():
+    if runtime_settings.debug_tools:
         payload["debug_move_history"] = list(
-            game.moves.order_by("created_at", "pk").values(
-                "action", "dice", "player_id", "distance"
-            )
+            {
+                "action": event["action"],
+                "dice": event["dice"],
+                "player_id": event["player_id"],
+                "distance": event["distance"],
+            }
+            for event in events
         )
     return payload
 
 
 def can_undo_last_move(game: Game, user: Any) -> bool:
     """Return whether a viewer may undo their latest move in this turn."""
+    return can_undo_last_move_from_events(game, user, game_history(game))
+
+
+def can_undo_last_move_from_events(
+    game: Game, user: Any, events: list[dict[str, Any]]
+) -> bool:
+    """Return undo capability from the projection's already loaded history."""
     if (
         game.status != Game.Status.ACTIVE
         or game.current_player_id != user.id
         or not game.has_rolled
     ):
         return False
-    latest_move = game.moves.order_by("-created_at", "-pk").first()
+    latest_move = events[-1] if events else None
     return bool(
         latest_move
-        and latest_move.player_id == user.id
-        and latest_move.action in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
+        and latest_move["player_id"] == user.id
+        and latest_move["action"] in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]
     )
 
 
