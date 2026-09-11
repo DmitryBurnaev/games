@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Iterable
 
 from django.conf import settings
 from django.db.utils import DatabaseError, OperationalError, ProgrammingError
@@ -17,21 +19,39 @@ MIN_CHECKER_COUNT = 1
 MAX_CHECKER_COUNT = 20
 
 
-def active_setting_value(key: AppSetting.Key) -> str | None:
-    """Return an enabled DB setting value, falling back when unavailable."""
+@dataclass(frozen=True)
+class GameRuntimeSettings:
+    """Runtime settings required to render and update one game page."""
+
+    debug_tools: bool
+    animations_enabled: bool
+    poll_interval_ms: int
+    quick_notifications_enabled: bool
+    notification_display_ms: int
+
+
+def active_setting_values(keys: Iterable[AppSetting.Key]) -> dict[str, str]:
+    """Return enabled setting values in one query, with safe DB fallbacks."""
+    requested_keys = list(dict.fromkeys(keys))
+    if not requested_keys:
+        return {}
     try:
-        return (
-            AppSetting.objects.filter(key=key, is_enabled=True)
-            .values_list("value", flat=True)
-            .first()
+        return dict(
+            AppSetting.objects.filter(
+                key__in=requested_keys, is_enabled=True
+            ).values_list("key", "value")
         )
     except DatabaseError, OperationalError, ProgrammingError:
-        return None
+        return {}
 
 
-def bool_setting(key: AppSetting.Key, fallback: Callable[[], bool]) -> bool:
-    """Read a boolean setting from DB, falling back for missing/invalid values."""
-    value = active_setting_value(key)
+def active_setting_value(key: AppSetting.Key) -> str | None:
+    """Return an enabled DB setting value, falling back when unavailable."""
+    return active_setting_values([key]).get(key)
+
+
+def bool_value(value: str | None, fallback: Callable[[], bool]) -> bool:
+    """Parse a boolean setting value or use its environment fallback."""
     if value is None:
         return fallback()
     normalized = value.strip().lower()
@@ -42,22 +62,33 @@ def bool_setting(key: AppSetting.Key, fallback: Callable[[], bool]) -> bool:
     return fallback()
 
 
-def int_setting(
-    key: AppSetting.Key,
+def int_value(
+    value: str | None,
     fallback: Callable[[], int],
     min_value: int | None = None,
 ) -> int:
-    """Read an integer setting from DB, falling back for missing/invalid values."""
-    value = active_setting_value(key)
+    """Parse an integer setting value or use its environment fallback."""
     if value is None:
         return fallback()
     try:
         parsed = int(value)
     except ValueError:
         return fallback()
-    if min_value is not None:
-        return max(parsed, min_value)
-    return parsed
+    return max(parsed, min_value) if min_value is not None else parsed
+
+
+def bool_setting(key: AppSetting.Key, fallback: Callable[[], bool]) -> bool:
+    """Read a boolean setting from DB, falling back for missing/invalid values."""
+    return bool_value(active_setting_value(key), fallback)
+
+
+def int_setting(
+    key: AppSetting.Key,
+    fallback: Callable[[], int],
+    min_value: int | None = None,
+) -> int:
+    """Read an integer setting from DB, falling back for missing/invalid values."""
+    return int_value(active_setting_value(key), fallback, min_value)
 
 
 def choice_setting(
@@ -138,6 +169,62 @@ def backgammon_notification_display_ms() -> int:
         AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
         lambda: settings.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
         min_value=1000,
+    )
+
+
+def backgammon_game_runtime_settings(*, finished: bool) -> GameRuntimeSettings:
+    """Resolve all settings required for one game projection in one query."""
+    keys = [
+        AppSetting.Key.BACKGAMMON_DEBUG_TOOLS,
+        AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+    ]
+    if not finished:
+        keys.extend(
+            [
+                AppSetting.Key.BACKGAMMON_ANIMATIONS_ENABLED,
+                AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS,
+                AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+                AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+            ]
+        )
+    values = active_setting_values(keys)
+    return GameRuntimeSettings(
+        debug_tools=bool_value(
+            values.get(AppSetting.Key.BACKGAMMON_DEBUG_TOOLS),
+            lambda: settings.BACKGAMMON_DEBUG_TOOLS,
+        ),
+        animations_enabled=(
+            False
+            if finished
+            else bool_value(
+                values.get(AppSetting.Key.BACKGAMMON_ANIMATIONS_ENABLED),
+                lambda: settings.BACKGAMMON_ANIMATIONS_ENABLED,
+            )
+        ),
+        poll_interval_ms=(
+            max(settings.BACKGAMMON_POLL_INTERVAL_MS, 250)
+            if finished
+            else int_value(
+                values.get(AppSetting.Key.BACKGAMMON_POLL_INTERVAL_MS),
+                lambda: settings.BACKGAMMON_POLL_INTERVAL_MS,
+                min_value=250,
+            )
+        ),
+        quick_notifications_enabled=(
+            False
+            if finished
+            else bool_value(
+                values.get(AppSetting.Key.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED),
+                lambda: settings.BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED,
+            )
+        ),
+        notification_display_ms=(
+            int_value(
+                values.get(AppSetting.Key.BACKGAMMON_NOTIFICATION_DISPLAY_MS),
+                lambda: settings.BACKGAMMON_NOTIFICATION_DISPLAY_MS,
+                min_value=1000,
+            )
+        ),
     )
 
 

@@ -19,12 +19,9 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .app_settings import (
-    backgammon_animations_enabled,
     backgammon_checker_count_presets,
     backgammon_debug_tools,
-    backgammon_notification_display_ms,
-    backgammon_poll_interval_ms,
-    backgammon_quick_notifications_enabled,
+    backgammon_game_runtime_settings,
 )
 from .models import (
     BackgammonPlayerPreference,
@@ -308,6 +305,9 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
     if not can_view_game(game, request.user):
         messages.error(request, "Эта игра доступна только участникам.")
         return redirect("backgammon:game_list")
+    runtime_settings = backgammon_game_runtime_settings(
+        finished=game.status == Game.Status.FINISHED
+    )
     return render(
         request,
         "backgammon/game_detail.html",
@@ -315,12 +315,16 @@ def game_detail(request: HttpRequest, pk: int) -> HttpResponse:
             "game": game,
             "can_join_game": game.status == Game.Status.WAITING
             and not game.color_for(request.user),
-            "debug_game_tools": backgammon_debug_tools(),
-            "animations_enabled": backgammon_animations_enabled(),
-            "poll_interval_ms": backgammon_poll_interval_ms(),
-            "quick_notifications_enabled": backgammon_quick_notifications_enabled(),
-            "notification_display_ms": backgammon_notification_display_ms(),
-            "quick_notification_options": quick_notification_options(),
+            "debug_game_tools": runtime_settings.debug_tools,
+            "animations_enabled": runtime_settings.animations_enabled,
+            "poll_interval_ms": runtime_settings.poll_interval_ms,
+            "quick_notifications_enabled": runtime_settings.quick_notifications_enabled,
+            "notification_display_ms": runtime_settings.notification_display_ms,
+            "quick_notification_options": (
+                quick_notification_options()
+                if runtime_settings.quick_notifications_enabled
+                else []
+            ),
         },
     )
 
