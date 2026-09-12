@@ -67,6 +67,20 @@ class FinishedGameLoadingTests(TestCase):
             "winner",
         ).get(pk=self.game.pk)
 
+    def add_history_events(self, count: int) -> None:
+        """Append compact history rows without affecting the finished outcome."""
+        GameMove.objects.bulk_create(
+            [
+                GameMove(
+                    game=self.game,
+                    player=self.white if index % 2 else self.black,
+                    action=GameMove.Action.ROLL,
+                    dice=[(index % 6) + 1, ((index + 1) % 6) + 1],
+                )
+                for index in range(count)
+            ]
+        )
+
     def test_finished_projection_uses_only_settings_and_history_queries(self) -> None:
         """Finished serialization has a constant two-query budget after game load."""
         game = self.loaded_game()
@@ -78,9 +92,28 @@ class FinishedGameLoadingTests(TestCase):
         query_sql = "\n".join(query["sql"] for query in queries)
         self.assertNotIn("auth_user", query_sql)
         self.assertNotIn('"backgammon_gamemove"."board"', query_sql)
+        self.assertNotIn("backgammon_gamenotification", query_sql)
         self.assertEqual(payload["quick_notifications"], [])
         self.assertEqual(payload["legal_moves"], [])
         self.assertFalse(payload["can_undo"])
+
+    def test_finished_projection_query_budget_is_constant_for_long_histories(
+        self,
+    ) -> None:
+        """History length changes work, not the two-query finished projection budget."""
+        query_counts: dict[int, int] = {}
+        previous_event_count = 3
+        for event_count in (10, 100, 1000):
+            with self.subTest(event_count=event_count):
+                self.add_history_events(event_count - previous_event_count)
+                game = self.loaded_game()
+                with CaptureQueriesContext(connection) as queries:
+                    serialize_game(game, self.white)
+                query_counts[event_count] = len(queries)
+                self.assertEqual(query_counts[event_count], 2)
+                previous_event_count = event_count
+
+        self.assertEqual(query_counts, {10: 2, 100: 2, 1000: 2})
 
     def test_finished_projection_keeps_statistics_from_history(self) -> None:
         """The compact projection preserves dice and skipped-move statistics."""
@@ -130,4 +163,26 @@ class FinishedGameLoadingTests(TestCase):
         self.assertLess(
             source.index("async function initializeGame()"),
             source.index("initializeGame();"),
+        )
+
+    def test_waiting_browser_lifecycle_starts_realtime_after_initial_state(
+        self,
+    ) -> None:
+        """Waiting games retain their WebSocket path after state initialization."""
+        source = (
+            Path(__file__)
+            .with_name("static")
+            .joinpath("backgammon", "game.js")
+            .read_text()
+        )
+
+        self.assertIn(
+            "if (nextGame.status !== 'finished') {\n"
+            "                connectStateSocket();",
+            source,
+        )
+        self.assertIn(
+            "if (app.dataset.initialStatus !== 'finished') {\n"
+            "                connectStateSocket();",
+            source,
         )
