@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -9,6 +10,7 @@ from django.utils import timezone
 
 from .app_settings import (
     DICE_MODE_PLAYER_BAG,
+    GameRuntimeSettings,
     backgammon_dice_mode,
     backgammon_game_runtime_settings,
     backgammon_notification_display_ms,
@@ -27,6 +29,19 @@ PlayerPayload = dict[str, Any] | None
 MovePayload = dict[str, Any]
 MarkerPayload = dict[str, Any]
 NotificationPayload = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class GameProjectionContext:
+    """Request-scoped inputs shared by all game state projections."""
+
+    game: Game
+    viewer: Any
+    viewer_color: Game.Color | None
+    runtime_settings: GameRuntimeSettings
+    events: list[dict[str, Any]]
+    dice_statistics: dict[str, dict[str, int]]
+    skipped_statistics: dict[str, dict[str, int]]
 
 
 PATHS: dict[Game.Color, list[int]] = {
@@ -1050,41 +1065,11 @@ def create_quick_notification(
     return notification
 
 
-def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
-    """Serialize a game into the JSON shape consumed by the browser UI."""
-    finished = game.status == Game.Status.FINISHED
-    runtime_settings = backgammon_game_runtime_settings(finished=finished)
-    events = game_history(game)
-    dice_statistics, skipped_statistics = history_statistics(game, events)
-    viewer_color = game.color_for(viewer)
-    viewer_moves = (
-        legal_moves(game, viewer) if game.status == Game.Status.ACTIVE else []
-    )
-    viewer_blocking_event = (
-        game.status == Game.Status.ACTIVE
-        and game.current_player_id == viewer.id
-        and game.has_rolled
-        and bool(viewer_color)
-        and has_blocking_event(game.board, viewer_color)
-    )
-    last_move_markers_payload = (
-        last_move_markers_from_events(game, viewer, events)
-        if game.status == Game.Status.ACTIVE
-        else []
-    )
-    last_move_steps_payload = (
-        last_move_steps_from_events(game, viewer, events)
-        if game.status == Game.Status.ACTIVE
-        else []
-    )
-    can_undo = can_undo_last_move_from_events(game, viewer, events)
-    can_send_quick_notifications = (
-        runtime_settings.quick_notifications_enabled
-        and game.status == Game.Status.ACTIVE
-        and bool(viewer_color)
-        and bool(game.opponent_for(viewer))
-    )
-    payload = {
+def common_game_projection(context: GameProjectionContext) -> dict[str, Any]:
+    """Build the status-independent portion of the browser state contract."""
+    game = context.game
+    viewer_color = context.viewer_color
+    return {
         "id": game.id,
         "party_number": game.party_number,
         "status": game.status,
@@ -1101,17 +1086,21 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "started_at": datetime_payload(game.started_at),
         "finished_at": datetime_payload(game.finished_at),
         "double_rolls": {
-            color: dice_statistics[color]["double_rolls"] for color in Game.Color.values
+            color: context.dice_statistics[color]["double_rolls"]
+            for color in Game.Color.values
         },
-        "dice_statistics": dice_statistics,
+        "dice_statistics": context.dice_statistics,
         "skipped_turns": {
-            color: skipped_statistics[color]["turns"] for color in Game.Color.values
+            color: context.skipped_statistics[color]["turns"]
+            for color in Game.Color.values
         },
         "skipped_moves": {
-            color: skipped_statistics[color]["moves"] for color in Game.Color.values
+            color: context.skipped_statistics[color]["moves"]
+            for color in Game.Color.values
         },
         "skipped_points": {
-            color: skipped_statistics[color]["points"] for color in Game.Color.values
+            color: context.skipped_statistics[color]["points"]
+            for color in Game.Color.values
         },
         "checker_count": game.checker_count,
         "board": game.board,
@@ -1120,35 +1109,84 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "remaining_moves": game.remaining_moves,
         "has_rolled": game.has_rolled,
         "turn_number": game.turn_number,
-        "can_surrender": game.status == Game.Status.ACTIVE
+    }
+
+
+def inactive_game_projection(context: GameProjectionContext) -> dict[str, Any]:
+    """Build fields shared by waiting and immutable finished games."""
+    return {
+        "can_surrender": False,
+        "surrender_mars_available": False,
+        "blocking_event": False,
+        "blocking_event_points": [],
+        "can_roll": False,
+        "can_end_turn": False,
+        "can_undo": False,
+        "can_send_quick_notifications": False,
+        "notification_display_ms": context.runtime_settings.notification_display_ms,
+        "quick_notifications": [],
+        "last_move_marker": None,
+        "last_move_markers": [],
+        "last_move_steps": [],
+        "legal_moves": [],
+    }
+
+
+def waiting_game_projection(context: GameProjectionContext) -> dict[str, Any]:
+    """Build the waiting-game portion of the existing state contract."""
+    return inactive_game_projection(context)
+
+
+def finished_game_projection(context: GameProjectionContext) -> dict[str, Any]:
+    """Build the immutable finished-game portion without active-game work."""
+    return inactive_game_projection(context)
+
+
+def active_game_projection(context: GameProjectionContext) -> dict[str, Any]:
+    """Build fields that depend on the viewer's current active turn."""
+    game = context.game
+    viewer = context.viewer
+    viewer_color = context.viewer_color
+    viewer_moves = legal_moves(game, viewer)
+    viewer_blocking_event = (
+        game.current_player_id == viewer.id
+        and game.has_rolled
         and bool(viewer_color)
-        and bool(game.opponent_for(viewer)),
-        "surrender_mars_available": game.status == Game.Status.ACTIVE
-        and surrender_mars_available(game, viewer),
+        and has_blocking_event(game.board, viewer_color)
+    )
+    last_move_markers_payload = last_move_markers_from_events(
+        game, viewer, context.events
+    )
+    last_move_steps_payload = last_move_steps_from_events(game, viewer, context.events)
+    can_send_quick_notifications = (
+        context.runtime_settings.quick_notifications_enabled
+        and bool(viewer_color)
+        and bool(game.opponent_for(viewer))
+    )
+    return {
+        "can_surrender": bool(viewer_color) and bool(game.opponent_for(viewer)),
+        "surrender_mars_available": surrender_mars_available(game, viewer),
         "blocking_event": viewer_blocking_event,
         "blocking_event_points": (
             blocking_event_points(game.board, viewer_color)
             if viewer_blocking_event
             else []
         ),
-        "can_roll": game.status == Game.Status.ACTIVE
-        and game.current_player_id == viewer.id
-        and not game.has_rolled,
+        "can_roll": game.current_player_id == viewer.id and not game.has_rolled,
         "can_end_turn": (
-            game.status == Game.Status.ACTIVE
-            and game.current_player_id == viewer.id
+            game.current_player_id == viewer.id
             and game.has_rolled
             and not viewer_moves
             and not viewer_blocking_event
         ),
-        "can_undo": can_undo,
+        "can_undo": can_undo_last_move_from_events(game, viewer, context.events),
         "can_send_quick_notifications": can_send_quick_notifications,
-        "notification_display_ms": runtime_settings.notification_display_ms,
+        "notification_display_ms": context.runtime_settings.notification_display_ms,
         "quick_notifications": quick_notifications_for_viewer(
             game,
             viewer,
-            enabled=runtime_settings.quick_notifications_enabled,
-            display_ms=runtime_settings.notification_display_ms,
+            enabled=context.runtime_settings.quick_notifications_enabled,
+            display_ms=context.runtime_settings.notification_display_ms,
         ),
         "last_move_marker": (
             last_move_markers_payload[-1] if last_move_markers_payload else None
@@ -1157,6 +1195,31 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         "last_move_steps": last_move_steps_payload,
         "legal_moves": viewer_moves,
     }
+
+
+def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
+    """Serialize a game through its common and status-specific projections."""
+    runtime_settings = backgammon_game_runtime_settings(
+        finished=game.status == Game.Status.FINISHED
+    )
+    events = game_history(game)
+    dice_statistics, skipped_statistics = history_statistics(game, events)
+    context = GameProjectionContext(
+        game=game,
+        viewer=viewer,
+        viewer_color=game.color_for(viewer),
+        runtime_settings=runtime_settings,
+        events=events,
+        dice_statistics=dice_statistics,
+        skipped_statistics=skipped_statistics,
+    )
+    payload = common_game_projection(context)
+    if game.status == Game.Status.ACTIVE:
+        payload.update(active_game_projection(context))
+    elif game.status == Game.Status.WAITING:
+        payload.update(waiting_game_projection(context))
+    else:
+        payload.update(finished_game_projection(context))
     if runtime_settings.debug_tools:
         payload["debug_move_history"] = list(
             {
@@ -1165,7 +1228,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
                 "player_id": event["player_id"],
                 "distance": event["distance"],
             }
-            for event in events
+            for event in context.events
         )
     return payload
 
