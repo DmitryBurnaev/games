@@ -20,6 +20,7 @@ from .models import (
     Board,
     Game,
     GameMove,
+    GamePositionSet,
     GameNotification,
     PlayerStats,
     QuickNotificationPreset,
@@ -75,9 +76,9 @@ def roll_dice() -> list[int]:
 def roll_dice_from_player_bag(game: Game, user: Any) -> list[int]:
     """Return dice from a per-player bag of all 36 ordered dice pairs."""
     previous_rolls = list(
-        game.moves.filter(player=user, action=GameMove.Action.ROLL)
-        .order_by("created_at", "pk")
-        .values_list("dice", flat=True)
+        event["dice"]
+        for event in effective_game_history(game_history(game))
+        if event["player_id"] == user.id and event["action"] == GameMove.Action.ROLL
     )
     previous_pairs = [
         tuple(dice)
@@ -132,8 +133,8 @@ def datetime_payload(value: Any) -> str | None:
 
 
 def game_history(game: Game) -> list[dict[str, Any]]:
-    """Load every event needed by a game projection without board snapshots."""
-    return list(
+    """Load ordered audit events needed by a projection without board snapshots."""
+    events = list(
         game.moves.order_by("created_at", "pk").values(
             "pk",
             "player_id",
@@ -142,7 +143,111 @@ def game_history(game: Game) -> list[dict[str, Any]]:
             "source_point",
             "target_point",
             "distance",
+            "turn_number",
+            "reverted_move_id",
+            "metadata",
+            "created_at",
         )
+    )
+    boundaries = (
+        game.position_sets.order_by("created_at", "pk").values(
+            "pk", "player_id", "turn_number", "metadata", "created_at"
+        )
+        if game.status == Game.Status.ACTIVE
+        else []
+    )
+    for boundary in boundaries:
+        events.append(
+            {
+                "pk": 1_000_000_000 + boundary["pk"],
+                "player_id": boundary["player_id"],
+                "action": GameMove.Action.POSITION_SET,
+                "dice": [],
+                "source_point": None,
+                "target_point": None,
+                "distance": None,
+                "turn_number": boundary["turn_number"],
+                "reverted_move_id": None,
+                "metadata": boundary["metadata"],
+                "created_at": boundary["created_at"],
+            }
+        )
+    return sorted(events, key=lambda event: (event["created_at"], event["pk"]))
+
+
+def effective_game_history(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reduce append-only audit rows to events that still affect the game.
+
+    Legacy rows have no turn number or metadata and remain effective unchanged.
+    An undo invalidates its referenced checker event; a position setup remains a
+    boundary event so callers can drop an obsolete unfinished turn while keeping
+    earlier diagnostic history available in the database.
+    """
+    reset_index = max(
+        (
+            index
+            for index, event in enumerate(events)
+            if event["action"] == GameMove.Action.POSITION_SET
+            and isinstance(event.get("metadata"), dict)
+            and event["metadata"].get("reset_statistics")
+        ),
+        default=None,
+    )
+    effective_audit = events[reset_index:] if reset_index is not None else events
+    reverted_move_ids = {
+        event["reverted_move_id"]
+        for event in effective_audit
+        if event["action"] == GameMove.Action.UNDO and event["reverted_move_id"]
+    }
+    return [
+        event
+        for event in effective_audit
+        if event["action"] != GameMove.Action.UNDO
+        and event["pk"] not in reverted_move_ids
+    ]
+
+
+def record_game_event(
+    game: Game,
+    player: Any,
+    action: GameMove.Action,
+    *,
+    dice: list[int] | None = None,
+    source_point: int | None = None,
+    target_point: int | None = None,
+    distance: int | None = None,
+    metadata: dict[str, Any] | None = None,
+    reverted_move: GameMove | None = None,
+) -> GameMove:
+    """Append one audit event using the current game snapshot and turn number."""
+    return GameMove.objects.create(
+        game=game,
+        player=player,
+        action=action,
+        dice=game.dice if dice is None else dice,
+        source_point=source_point,
+        target_point=target_point,
+        distance=distance,
+        board=game.board,
+        turn_number=game.turn_number,
+        metadata=metadata or {},
+        reverted_move=reverted_move,
+    )
+
+
+def record_debug_position_set(
+    game: Game,
+    user: Any,
+    preset: str,
+    *,
+    reset_statistics: bool,
+) -> GamePositionSet:
+    """Append a debug boundary without deleting previous audit snapshots."""
+    return GamePositionSet.objects.create(
+        game=game,
+        player=user,
+        turn_number=game.turn_number,
+        metadata={"preset": preset, "reset_statistics": reset_statistics},
     )
 
 
@@ -166,18 +271,25 @@ def history_statistics(
     game: Game, events: list[dict[str, Any]]
 ) -> tuple[dict[str, dict[str, int]], dict[str, dict[str, int]]]:
     """Calculate dice and skipped-move statistics in one ordered history pass."""
-    dice_statistics = {
-        color: {
-            "total_points": 0,
-            "double_rolls": 0,
-            "double_moves_used": 0,
-            "double_moves_available": 0,
+
+    def empty_dice_statistics() -> dict[str, dict[str, int]]:
+        return {
+            color: {
+                "total_points": 0,
+                "double_rolls": 0,
+                "double_moves_used": 0,
+                "double_moves_available": 0,
+            }
+            for color in Game.Color.values
         }
-        for color in Game.Color.values
-    }
-    skipped_statistics = {
-        color: {"turns": 0, "moves": 0, "points": 0} for color in Game.Color.values
-    }
+
+    def empty_skipped_statistics() -> dict[str, dict[str, int]]:
+        return {
+            color: {"turns": 0, "moves": 0, "points": 0} for color in Game.Color.values
+        }
+
+    dice_statistics = empty_dice_statistics()
+    skipped_statistics = empty_skipped_statistics()
     current_roll: dict[str, Any] | None = None
     used_distances: list[int] = []
     latest_rolls: dict[int, dict[str, Any]] = {}
@@ -202,6 +314,15 @@ def history_statistics(
         action = event["action"]
         player_id = event["player_id"]
         color = history_color(game, player_id)
+        if action == GameMove.Action.POSITION_SET:
+            current_roll = None
+            used_distances = []
+            if event.get("metadata", {}).get("reset_statistics"):
+                dice_statistics = empty_dice_statistics()
+                skipped_statistics = empty_skipped_statistics()
+                latest_rolls = {}
+                double_usage_before_roll = {}
+            continue
         if action == GameMove.Action.ROLL:
             count_unspent_dice(current_roll)
             current_roll = event
@@ -580,6 +701,7 @@ def arrange_checkers_in_home(game: Game, user: Any) -> None:
     game.has_rolled = False
     game.head_moves_this_turn = 0
     game.save()
+    record_debug_position_set(game, user, "prepare_bear_off", reset_statistics=False)
 
 
 def arrange_checkers_for_victory_test(game: Game, user: Any) -> None:
@@ -610,6 +732,7 @@ def arrange_checkers_for_victory_test(game: Game, user: Any) -> None:
     game.has_rolled = False
     game.head_moves_this_turn = 0
     game.save()
+    record_debug_position_set(game, user, "prepare_victory", reset_statistics=False)
 
 
 def arrange_final_double_test(game: Game, user: Any) -> None:
@@ -623,7 +746,6 @@ def arrange_final_double_test(game: Game, user: Any) -> None:
     if not color:
         raise GameError("Вы не участвуете в этой игре.")
 
-    game.moves.all().delete()
     remove_color_from_board(game.board, color)
     game.borne_off[color] = game.checker_count - 1
     add_checker(game.board, PATHS[color][22], color)
@@ -634,13 +756,8 @@ def arrange_final_double_test(game: Game, user: Any) -> None:
     game.head_moves_this_turn = 0
     game.started_at = timezone.now()
     game.save()
-    GameMove.objects.create(
-        game=game,
-        player=user,
-        action=GameMove.Action.ROLL,
-        dice=game.dice,
-        board=game.board,
-    )
+    record_debug_position_set(game, user, "prepare_final_double", reset_statistics=True)
+    record_game_event(game, user, GameMove.Action.ROLL, dice=game.dice)
 
 
 def arrange_extra_head_move_test(game: Game, user: Any) -> None:
@@ -655,7 +772,6 @@ def arrange_extra_head_move_test(game: Game, user: Any) -> None:
     opponent = opponent_color(color)
     blocked_target = PATHS[color][10]
 
-    game.moves.all().delete()
     game.board = [None for _ in range(24)]
     game.board[HEADS[color]] = {"color": color, "count": game.checker_count}
     if game.checker_count > 1:
@@ -674,13 +790,8 @@ def arrange_extra_head_move_test(game: Game, user: Any) -> None:
     game.turn_number = 1
     game.started_at = timezone.now()
     game.save()
-    GameMove.objects.create(
-        game=game,
-        player=user,
-        action=GameMove.Action.ROLL,
-        dice=game.dice,
-        board=game.board,
-    )
+    record_debug_position_set(game, user, "prepare_extra_head", reset_statistics=True)
+    record_game_event(game, user, GameMove.Action.ROLL, dice=game.dice)
 
 
 def arrange_blocking_event_test(game: Game, user: Any) -> None:
@@ -694,7 +805,6 @@ def arrange_blocking_event_test(game: Game, user: Any) -> None:
 
     opponent = opponent_color(color)
     path = PATHS[color]
-    game.moves.all().delete()
     game.board = [None for _ in range(24)]
     block_size = min(6, game.checker_count)
     for point in path[:block_size]:
@@ -710,22 +820,18 @@ def arrange_blocking_event_test(game: Game, user: Any) -> None:
     game.head_moves_this_turn = 0
     game.started_at = timezone.now()
     game.save()
-    GameMove.objects.create(
-        game=game,
-        player=user,
-        action=GameMove.Action.ROLL,
-        dice=game.dice,
-        board=game.board,
+    record_debug_position_set(
+        game, user, "prepare_blocking_event", reset_statistics=True
     )
-    GameMove.objects.create(
-        game=game,
-        player=user,
-        action=GameMove.Action.MOVE,
+    record_game_event(game, user, GameMove.Action.ROLL, dice=game.dice)
+    record_game_event(
+        game,
+        user,
+        GameMove.Action.MOVE,
         dice=game.dice,
         source_point=path[4],
         target_point=path[5],
         distance=1,
-        board=game.board,
     )
 
 
@@ -891,12 +997,21 @@ def checker_move_events_for_current_roll(
     events: list[dict[str, Any]], player_id: int
 ) -> list[dict[str, Any]]:
     """Return one player's checker events after their latest recorded roll."""
+    latest_position_pk = max(
+        (
+            event["pk"]
+            for event in events
+            if event["action"] == GameMove.Action.POSITION_SET
+        ),
+        default=None,
+    )
     latest_roll_pk = max(
         (
             event["pk"]
             for event in events
             if event["player_id"] == player_id
             and event["action"] == GameMove.Action.ROLL
+            and (latest_position_pk is None or event["pk"] > latest_position_pk)
         ),
         default=None,
     )
@@ -1202,7 +1317,7 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     runtime_settings = backgammon_game_runtime_settings(
         finished=game.status == Game.Status.FINISHED
     )
-    events = game_history(game)
+    events = effective_game_history(game_history(game))
     dice_statistics, skipped_statistics = history_statistics(game, events)
     context = GameProjectionContext(
         game=game,
@@ -1229,13 +1344,16 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
                 "distance": event["distance"],
             }
             for event in context.events
+            if event["action"] != GameMove.Action.POSITION_SET
         )
     return payload
 
 
 def can_undo_last_move(game: Game, user: Any) -> bool:
     """Return whether a viewer may undo their latest move in this turn."""
-    return can_undo_last_move_from_events(game, user, game_history(game))
+    return can_undo_last_move_from_events(
+        game, user, effective_game_history(game_history(game))
+    )
 
 
 def can_undo_last_move_from_events(
@@ -1274,9 +1392,7 @@ def create_roll(game: Game, user: Any) -> list[int]:
         game.started_at = timezone.now()
         update_fields.append("started_at")
     game.save(update_fields=update_fields)
-    GameMove.objects.create(
-        game=game, player=user, action=GameMove.Action.ROLL, dice=dice, board=game.board
-    )
+    record_game_event(game, user, GameMove.Action.ROLL, dice=dice)
     return dice
 
 
@@ -1339,13 +1455,7 @@ def surrender_game(
     game.has_rolled = False
     update_stats(game, winner)
     game.save()
-    GameMove.objects.create(
-        game=game,
-        player=loser,
-        action=GameMove.Action.FINISH,
-        dice=[],
-        board=game.board,
-    )
+    record_game_event(game, loser, GameMove.Action.FINISH, dice=[])
 
 
 def apply_move(game: Game, user: Any, source_point: int, distance: int) -> None:
@@ -1375,54 +1485,67 @@ def apply_move(game: Game, user: Any, source_point: int, distance: int) -> None:
         update_stats(game, user)
 
     game.save()
-    GameMove.objects.create(
-        game=game,
-        player=user,
-        action=move["action"],
+    record_game_event(
+        game,
+        user,
+        move["action"],
         dice=dice_before_move,
         source_point=source_point,
         target_point=move["target_point"],
         distance=distance,
-        board=game.board,
     )
 
     if game.status == Game.Status.FINISHED:
-        GameMove.objects.create(
-            game=game,
-            player=user,
-            action=GameMove.Action.FINISH,
-            dice=game.dice,
-            board=game.board,
-        )
+        record_game_event(game, user, GameMove.Action.FINISH, dice=game.dice)
 
 
-def last_roll_for(game: Game, user: Any) -> GameMove | None:
-    """Return the latest roll event recorded for a user in a game."""
-    return (
-        game.moves.filter(game=game, player=user, action=GameMove.Action.ROLL)
-        .order_by("-created_at", "-pk")
-        .first()
+def last_roll_event_for(
+    events: list[dict[str, Any]], user_id: int
+) -> dict[str, Any] | None:
+    """Return the latest effective roll after the latest position boundary."""
+    latest_position_pk = max(
+        (
+            event["pk"]
+            for event in events
+            if event["action"] == GameMove.Action.POSITION_SET
+        ),
+        default=None,
+    )
+    return next(
+        (
+            event
+            for event in reversed(events)
+            if event["player_id"] == user_id
+            and event["action"] == GameMove.Action.ROLL
+            and (latest_position_pk is None or event["pk"] > latest_position_pk)
+        ),
+        None,
     )
 
 
-def restore_head_moves_count(game: Game, user: Any, undone_move: GameMove) -> None:
-    """Recompute how many head moves remain after undoing one move."""
+def last_roll_for(game: Game, user: Any) -> GameMove | None:
+    """Return the latest effective roll for callers that need a model row."""
+    event = last_roll_event_for(effective_game_history(game_history(game)), user.id)
+    return game.moves.filter(pk=event["pk"]).first() if event else None
+
+
+def restore_head_moves_count(
+    game: Game,
+    user: Any,
+    undone_move: GameMove,
+    events: list[dict[str, Any]],
+) -> None:
+    """Recompute head moves from the current effective turn before appending undo."""
     color = game.color_for(user)
-    latest_roll = last_roll_for(game, user)
+    latest_roll = last_roll_event_for(events, user.id)
     if not latest_roll:
         game.head_moves_this_turn = 0
         return
 
-    game.head_moves_this_turn = (
-        game.moves.filter(
-            game=game,
-            player=user,
-            action__in=[GameMove.Action.MOVE, GameMove.Action.BEAR_OFF],
-            source_point=HEADS[color],
-            pk__gt=latest_roll.pk,
-        )
-        .exclude(pk=undone_move.pk)
-        .count()
+    game.head_moves_this_turn = sum(
+        1
+        for event in checker_move_events_for_current_roll(events, user.id)
+        if event["pk"] != undone_move.pk and event["source_point"] == HEADS[color]
     )
 
 
@@ -1432,20 +1555,22 @@ def undo_last_move(game: Game, user: Any) -> None:
         raise GameError("Завершенную игру нельзя откатить.")
     if game.current_player_id != user.id or not game.has_rolled:
         raise GameError("Отменить ход можно только до завершения вашего текущего хода.")
-    latest_move = game.moves.order_by("-created_at", "-pk").first()
-    if not latest_move or latest_move.player_id != user.id:
+    events = effective_game_history(game_history(game))
+    latest_event = events[-1] if events else None
+    if not latest_event or latest_event["player_id"] != user.id:
         raise GameError("Отменить можно только ваш последний ход.")
-    if latest_move.action not in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]:
+    if latest_event["action"] not in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]:
         raise GameError("Последнее действие нельзя отменить.")
+    latest_move = game.moves.get(pk=latest_event["pk"])
 
     color = game.color_for(user)
     if not color:
         raise GameError("Вы не участвуете в этой игре.")
 
     if not game.dice:
-        latest_roll = last_roll_for(game, user)
+        latest_roll = last_roll_event_for(events, user.id)
         game.dice = latest_move.dice or (
-            latest_roll.dice if latest_roll else [latest_move.distance]
+            latest_roll["dice"] if latest_roll else [latest_move.distance]
         )
 
     if latest_move.action == GameMove.Action.BEAR_OFF:
@@ -1462,9 +1587,16 @@ def undo_last_move(game: Game, user: Any) -> None:
         add_checker(game.board, latest_move.source_point, color)
 
     game.remaining_moves.append(latest_move.distance)
-    restore_head_moves_count(game, user, latest_move)
-    latest_move.delete()
+    restore_head_moves_count(game, user, latest_move, events)
     game.save()
+    record_game_event(
+        game,
+        user,
+        GameMove.Action.UNDO,
+        dice=game.dice,
+        metadata={"reverted_action": latest_move.action},
+        reverted_move=latest_move,
+    )
 
 
 def finish_blocked_turn(game: Game, user: Any) -> None:

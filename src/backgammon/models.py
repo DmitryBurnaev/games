@@ -190,7 +190,13 @@ class Game(models.Model):
 
 
 class GameMove(models.Model):
-    """An immutable history event for rolls, checker moves, and game finish."""
+    """An append-only audit event with an optional effective-game meaning.
+
+    Rows are ordered by ``(created_at, pk)``.  ``player`` is always the actor.
+    ``UNDO`` invalidates the referenced checker event for effective projections.
+    Position boundaries live separately so existing diagnostic move history keeps
+    its legacy shape and snapshots stored in ``board``.
+    """
 
     class Action(models.TextChoices):
         JOIN = "join", "Join"
@@ -198,6 +204,8 @@ class GameMove(models.Model):
         MOVE = "move", "Move"
         BEAR_OFF = "bear_off", "Bear off"
         FINISH = "finish", "Finish"
+        UNDO = "undo", "Undo"
+        POSITION_SET = "position_set", "Position set"
 
     game = models.ForeignKey(Game, related_name="moves", on_delete=models.CASCADE)
     player = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -207,6 +215,15 @@ class GameMove(models.Model):
     target_point = models.PositiveSmallIntegerField(blank=True, null=True)
     distance = models.PositiveSmallIntegerField(blank=True, null=True)
     board = models.JSONField(default=list)
+    turn_number = models.PositiveIntegerField(blank=True, null=True)
+    reverted_move = models.ForeignKey(
+        "self",
+        related_name="undo_events",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -214,6 +231,21 @@ class GameMove(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_action_display()} in game #{self.game_id}"
+
+
+class GamePositionSet(models.Model):
+    """Append-only debug boundary for effective history, ordered with GameMove."""
+
+    game = models.ForeignKey(
+        Game, related_name="position_sets", on_delete=models.CASCADE
+    )
+    player = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    turn_number = models.PositiveIntegerField()
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
 
 
 class BackgammonPlayerPreference(models.Model):
