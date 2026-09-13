@@ -45,6 +45,7 @@ from .services import (
     finish_blocked_turn,
     place_debug_checker,
     quick_notification_options,
+    record_game_event,
     roll_die,
     serialize_game,
     surrender_game,
@@ -379,12 +380,11 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
                 "updated_at",
             ]
         )
-        GameMove.objects.create(
-            game=game,
-            player=request.user,
-            action=GameMove.Action.JOIN,
+        record_game_event(
+            game,
+            request.user,
+            GameMove.Action.JOIN,
             dice=[white_die, black_die],
-            board=game.board,
         )
         queue_game_update(game.pk)
 
