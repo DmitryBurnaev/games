@@ -384,6 +384,21 @@ def history_statistics(
     return dice_statistics, skipped_statistics
 
 
+def persist_finished_statistics(game: Game) -> None:
+    """Store immutable finished-game statistics after its final audit event."""
+    events = effective_game_history(game_history(game))
+    dice_statistics, skipped_statistics = history_statistics(game, events)
+    game.finished_dice_statistics = dice_statistics
+    game.finished_skipped_statistics = skipped_statistics
+    game.save(
+        update_fields=[
+            "finished_dice_statistics",
+            "finished_skipped_statistics",
+            "updated_at",
+        ]
+    )
+
+
 def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     """Return rolled points and double usage grouped by checker color."""
     return history_statistics(game, game_history(game))[0]
@@ -1317,8 +1332,18 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     runtime_settings = backgammon_game_runtime_settings(
         finished=game.status == Game.Status.FINISHED
     )
-    events = effective_game_history(game_history(game))
-    dice_statistics, skipped_statistics = history_statistics(game, events)
+    has_finished_statistics = (
+        game.status == Game.Status.FINISHED
+        and isinstance(game.finished_dice_statistics, dict)
+        and isinstance(game.finished_skipped_statistics, dict)
+    )
+    if has_finished_statistics:
+        events = []
+        dice_statistics = game.finished_dice_statistics
+        skipped_statistics = game.finished_skipped_statistics
+    else:
+        events = effective_game_history(game_history(game))
+        dice_statistics, skipped_statistics = history_statistics(game, events)
     context = GameProjectionContext(
         game=game,
         viewer=viewer,
@@ -1456,6 +1481,7 @@ def surrender_game(
     update_stats(game, winner)
     game.save()
     record_game_event(game, loser, GameMove.Action.FINISH, dice=[])
+    persist_finished_statistics(game)
 
 
 def apply_move(game: Game, user: Any, source_point: int, distance: int) -> None:
@@ -1497,6 +1523,7 @@ def apply_move(game: Game, user: Any, source_point: int, distance: int) -> None:
 
     if game.status == Game.Status.FINISHED:
         record_game_event(game, user, GameMove.Action.FINISH, dice=game.dice)
+        persist_finished_statistics(game)
 
 
 def last_roll_event_for(
