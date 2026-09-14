@@ -152,7 +152,7 @@ def signup(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def game_list(request: HttpRequest) -> HttpResponse:
-    """Render the lobby with current games, open games, and stats."""
+    """Render the lobby with the user's games, open games, and stats."""
     games = Game.objects.select_related(
         "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
@@ -165,7 +165,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
         decorate_lobby_game(game, request.user)
         for game in games.filter(
             Q(white_player=request.user) | Q(black_player=request.user)
-        ).exclude(status=Game.Status.FINISHED)[:20]
+        )[:20]
     ]
     finished_games_count = (
         games.filter(status=Game.Status.FINISHED)

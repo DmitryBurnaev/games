@@ -11,7 +11,7 @@ from .models import Game
 
 
 class FinishedGameArchiveTests(TestCase):
-    """Coverage for keeping completed games out of the active lobby list."""
+    """Coverage for the participant-only finished-game archive."""
 
     def setUp(self) -> None:
         user_model = get_user_model()
@@ -31,7 +31,7 @@ class FinishedGameArchiveTests(TestCase):
         )
         return game
 
-    def test_lobby_separates_finished_games_and_links_to_archive(self) -> None:
+    def test_lobby_keeps_finished_games_and_links_to_archive(self) -> None:
         finished = self.finished_game(1)
         active = Game.objects.create(
             white_player=self.white,
@@ -43,9 +43,9 @@ class FinishedGameArchiveTests(TestCase):
 
         response = self.client.get(reverse("backgammon:game_list"))
 
-        self.assertContains(response, "Текущие игры")
+        self.assertContains(response, "Мои игры")
         self.assertContains(response, f"#{active.party_number}")
-        self.assertNotContains(response, f"#{finished.party_number}")
+        self.assertContains(response, f"#{finished.party_number}")
         self.assertContains(response, reverse("backgammon:finished_game_archive"))
 
     def test_archive_is_participant_only_and_paginated(self) -> None:

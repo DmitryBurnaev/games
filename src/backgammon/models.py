@@ -143,6 +143,8 @@ class Game(models.Model):
     turn_number = models.PositiveIntegerField(default=1)
     started_at = models.DateTimeField(blank=True, null=True)
     finished_at = models.DateTimeField(blank=True, null=True)
+    finished_dice_statistics = models.JSONField(blank=True, null=True)
+    finished_skipped_statistics = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
