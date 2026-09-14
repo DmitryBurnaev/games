@@ -68,7 +68,12 @@
 
 <div class="row g-4">
     <section class="col-lg-7">
-        <h2 class="h5 mb-3">Мои игры</h2>
+        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+            <h2 class="h5 mb-0">Текущие игры</h2>
+            {% if finished_games_count %}
+                <a class="btn btn-outline-secondary btn-sm" href="{% url 'backgammon:finished_game_archive' %}">Архив · {{ finished_games_count }}</a>
+            {% endif %}
+        </div>
         <div class="list-group">
             {% for game in my_games %}
                 <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
@@ -93,7 +98,7 @@
                     {% endif %}
                 </a>
             {% empty %}
-                <div class="text-secondary">Пока нет игр.</div>
+                <div class="text-secondary">Текущих игр нет.</div>
             {% endfor %}
         </div>
     </section>

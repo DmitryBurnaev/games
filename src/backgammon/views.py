@@ -13,6 +13,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.db import transaction
 from django.db.models import Max, Q
+from django.core.paginator import Paginator
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -151,7 +152,7 @@ def signup(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def game_list(request: HttpRequest) -> HttpResponse:
-    """Render the lobby with the user's games, open games, and stats."""
+    """Render the lobby with current games, open games, and stats."""
     games = Game.objects.select_related(
         "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
@@ -164,8 +165,13 @@ def game_list(request: HttpRequest) -> HttpResponse:
         decorate_lobby_game(game, request.user)
         for game in games.filter(
             Q(white_player=request.user) | Q(black_player=request.user)
-        )[:20]
+        ).exclude(status=Game.Status.FINISHED)[:20]
     ]
+    finished_games_count = (
+        games.filter(status=Game.Status.FINISHED)
+        .filter(Q(white_player=request.user) | Q(black_player=request.user))
+        .count()
+    )
     open_games_query = (
         games.filter(status=Game.Status.WAITING)
         .filter(Q(planned_opponent=request.user) | Q(planned_opponent__isnull=True))
@@ -182,6 +188,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
         {
             "my_games": my_games,
             "my_games_count": my_games_count,
+            "finished_games_count": finished_games_count,
             "open_games": open_games,
             "stats": stats,
             "default_checker_color": default_checker_color_for(request.user),
@@ -192,6 +199,24 @@ def game_list(request: HttpRequest) -> HttpResponse:
             .objects.exclude(pk=request.user.pk)
             .order_by("username"),
         },
+    )
+
+
+@login_required
+def finished_game_archive(request: HttpRequest) -> HttpResponse:
+    """Render a paginated participant-only archive of completed games."""
+    games = (
+        Game.objects.select_related("white_player", "black_player", "winner")
+        .filter(status=Game.Status.FINISHED)
+        .filter(Q(white_player=request.user) | Q(black_player=request.user))
+        .order_by("-finished_at", "-created_at")
+    )
+    page = Paginator(games, 20).get_page(request.GET.get("page"))
+    finished_games = [decorate_lobby_game(game, request.user) for game in page]
+    return render(
+        request,
+        "backgammon/finished_game_archive.html",
+        {"finished_games": finished_games, "page": page},
     )
 
 

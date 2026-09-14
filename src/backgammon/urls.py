@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.game_list, name="game_list"),
     path("signup/", views.signup, name="signup"),
     path("games/new/", views.create_game, name="create_game"),
+    path("games/archive/", views.finished_game_archive, name="finished_game_archive"),
     path("games/<int:pk>/", views.game_detail, name="game_detail"),
     path("games/<int:pk>/join/", views.join_game, name="join_game"),
     path("games/<int:pk>/state/", views.game_state, name="game_state"),
