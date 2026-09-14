@@ -1,0 +1,37 @@
+{% extends 'backgammon/base.html' %}
+
+{% block title %}Архив игр · Длинные нарды{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center gap-3 mb-4">
+    <div>
+        <h1 class="h3 mb-1">Архив игр</h1>
+        <div class="text-secondary small">Завершённые партии</div>
+    </div>
+    <a class="btn btn-outline-secondary" href="{% url 'backgammon:game_list' %}">К текущим играм</a>
+</div>
+
+<div class="list-group">
+    {% for game in finished_games %}
+        <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
+            <span class="d-flex flex-column gap-1">
+                <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.white_player_label }} ⇆ {{ game.black_player_label }}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
+                <span class="text-secondary small">{{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек</span>
+            </span>
+            <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">{% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}</span>
+        </a>
+    {% empty %}
+        <div class="text-secondary">Завершённых партий пока нет.</div>
+    {% endfor %}
+</div>
+
+{% if page.paginator.num_pages > 1 %}
+    <nav class="mt-4" aria-label="Страницы архива">
+        <ul class="pagination mb-0">
+            {% if page.has_previous %}<li class="page-item"><a class="page-link" href="?page={{ page.previous_page_number }}">Назад</a></li>{% endif %}
+            <li class="page-item disabled"><span class="page-link">{{ page.number }} / {{ page.paginator.num_pages }}</span></li>
+            {% if page.has_next %}<li class="page-item"><a class="page-link" href="?page={{ page.next_page_number }}">Вперёд</a></li>{% endif %}
+        </ul>
+    </nav>
+{% endif %}
+{% endblock %}
