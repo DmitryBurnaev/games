@@ -385,7 +385,7 @@ def history_statistics(
 
 
 def persist_finished_statistics(game: Game) -> None:
-    """Store immutable finished-game statistics after its final audit event."""
+    """Store finished statistics without changing the last gameplay timestamp."""
     events = effective_game_history(game_history(game))
     dice_statistics, skipped_statistics = history_statistics(game, events)
     game.finished_dice_statistics = dice_statistics
@@ -394,19 +394,18 @@ def persist_finished_statistics(game: Game) -> None:
         update_fields=[
             "finished_dice_statistics",
             "finished_skipped_statistics",
-            "updated_at",
         ]
     )
 
 
 def dice_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     """Return rolled points and double usage grouped by checker color."""
-    return history_statistics(game, game_history(game))[0]
+    return history_statistics(game, effective_game_history(game_history(game)))[0]
 
 
 def skipped_statistics_by_color(game: Game) -> dict[str, dict[str, int]]:
     """Return unspent dice moves and points grouped by rolling color."""
-    return history_statistics(game, game_history(game))[1]
+    return history_statistics(game, effective_game_history(game_history(game)))[1]
 
 
 def skipped_turns_by_color(game: Game) -> dict[str, int]:
@@ -1338,7 +1337,11 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
         and isinstance(game.finished_skipped_statistics, dict)
     )
     if has_finished_statistics:
-        events = []
+        events = (
+            effective_game_history(game_history(game))
+            if runtime_settings.debug_tools
+            else []
+        )
         dice_statistics = game.finished_dice_statistics
         skipped_statistics = game.finished_skipped_statistics
     else:
