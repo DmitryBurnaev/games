@@ -26,7 +26,7 @@
     const configuredNotificationDisplayMs = parseInt(app.dataset.notificationDisplayMs || '4500', 10);
     const fallbackNotificationDisplayMs = Math.max(configuredNotificationDisplayMs || 4500, 1000);
     const gameDebugId = debugGameTools ? app.dataset.gameId || null : null;
-    const domovoyImages = [app.dataset.domovoyOne, app.dataset.domovoyTwo].filter(Boolean);
+    const domovoyImages = (app.dataset.domovoyImages || '').split(/\s+/).filter(Boolean);
     const csrfToken = app.querySelector('[name=csrfmiddlewaretoken]').value;
 
     const boardEl = document.getElementById('board');
