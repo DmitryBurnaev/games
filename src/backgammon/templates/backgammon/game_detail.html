@@ -29,8 +29,7 @@
     data-prepare-blocking-event-url="{% url 'backgammon:prepare_blocking_event' game.pk %}"
     data-debug-place-checker-url="{% url 'backgammon:debug_place_checker' game.pk %}"
     {% endif %}
-    data-domovoy-one="{% static 'domovoy-1.jpg' %}"
-    data-domovoy-two="{% static 'domovoy-2.jpg' %}"
+    data-domovoy-images="{% static 'domovoy-1.jpg' %} {% static 'domovoy-2.jpg' %} {% static 'domovoy-3.png' %} {% static 'domovoy-4.png' %} {% static 'domovoy-5.png' %} {% static 'domovoy-6.png' %} {% static 'domovoy-7.png' %}"
 >
     {% csrf_token %}
 
@@ -135,5 +134,5 @@
 
 </div>
 
-<script src="{% static 'backgammon/game.js' %}?v=74"></script>
+<script src="{% static 'backgammon/game.js' %}?v=75"></script>
 {% endblock %}
