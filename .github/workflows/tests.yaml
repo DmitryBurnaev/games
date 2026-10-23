@@ -6,12 +6,18 @@ on:
   push:
     branches:
       - "main"
+      - "codex/39-security-scans-actions"
+
+permissions:
+  contents: read
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Prepare .env file
         run: |
@@ -19,7 +25,6 @@ jobs:
           echo "DJANGO_SECRET_KEY=test-secret-key" >> .env
           echo "DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,testserver" >> .env
           sudo install -d -o 1010 -g 1010 -m 0770 .data
-          env >> .env
 
       - name: Build images
         run: docker compose build test

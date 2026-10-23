@@ -93,7 +93,7 @@ class EffectiveGameHistoryTests(TestCase):
         effective = effective_game_history(game_history(self.game))
         payload = serialize_game(self.game, self.white)
 
-        self.assertEqual(len(self.game.moves.all()), len(old_event_ids) + 1)
+        self.assertEqual(self.game.moves.count(), len(old_event_ids) + 1)
         self.assertEqual(GamePositionSet.objects.filter(game=self.game).count(), 1)
         self.assertEqual(
             GameMove.objects.filter(pk__in=old_event_ids).count(), len(old_event_ids)

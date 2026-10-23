@@ -1,6 +1,9 @@
 .data
 .git
 .github
+.env
+.env.*
+!.env.template
 .idea
 .local
 .venv
