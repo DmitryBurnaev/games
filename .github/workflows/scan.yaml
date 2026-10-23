@@ -4,14 +4,19 @@ on:
   push:
     branches:
       - "main"
+      - "codex/39-security-scans-actions"
   schedule:
     - cron: "0 0 * * 1"
+
+permissions:
+  contents: read
 
 env:
   DOCKER_IMAGE: games:scan-${{ github.sha }}
   TRIVY_VERSION: "v0.67.2"
   TRIVY_SEVERITY: "CRITICAL,HIGH,MEDIUM,LOW"
   OPENGREP_VERSION: "v1.11.2"
+  OPENGREP_RULES_REVISION: "f1d2b562b414783763fd02a6ed2736eaed622efa"
   OPENGREP_EXCLUDE_RULES: ".github/scan/opengrep-exclude-rules.txt"
   TRUFFLEHOG_VERSION: "v3.90.12"
   GITLEAKS_VERSION: "v8.28.0"
@@ -19,32 +24,34 @@ env:
 jobs:
   trufflehog:
     name: trufflehog
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Install Trufflehog
         run: |
           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin ${{ env.TRUFFLEHOG_VERSION }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Run Trufflehog FS (report)
         run: |
-          trufflehog filesystem ${{ runner.workspace }} --results=verified,unknown --json > "${{ runner.workspace }}/trufflehog-results.json"
+          trufflehog filesystem "${{ github.workspace }}" --results=verified,unknown --json > "${{ runner.temp }}/trufflehog-results.json"
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: trufflehog-results
-          path: "${{ runner.workspace }}/trufflehog-results.json"
+          path: "${{ runner.temp }}/trufflehog-results.json"
           retention-days: 60
 
       - name: Run Trufflehog FS (alert)
         run: |
-          trufflehog filesystem ${{ runner.workspace }} --results=verified,unknown --fail --github-actions
+          trufflehog filesystem "${{ github.workspace }}" --results=verified,unknown --fail --github-actions
 
   gitleaks:
     name: gitleaks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Install GitLeaks
         run: |
@@ -52,32 +59,41 @@ jobs:
           cd /home/runner/.gitleaks
           make build
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify Gitleaks detects a new secret
+        run: |
+          export PATH='/home/runner/.gitleaks':$PATH
+          bash .github/scan/verify-scanner.sh gitleaks
 
       - name: Run Gitleaks (report)
         run: |
           export PATH='/home/runner/.gitleaks':$PATH
-          gitleaks git . --exit-code 0 --report-format json --report-path "${{ runner.workspace }}/gitleaks-results.json"
+          gitleaks git . --redact=100 --exit-code 0 --report-format json --report-path "${{ runner.temp }}/gitleaks-results.json"
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: gitleaks-results
-          path: "${{ runner.workspace }}/gitleaks-results.json"
+          path: "${{ runner.temp }}/gitleaks-results.json"
           retention-days: 60
 
       - name: Run Gitleaks (alert)
         run: |
           export PATH='/home/runner/.gitleaks':$PATH
-          gitleaks git . --verbose
+          gitleaks git . --redact=100 --verbose
 
   opengrep:
     name: opengrep
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install Opengrep
         run: |
@@ -86,22 +102,26 @@ jobs:
       - name: Clone Opengrep Rules
         run: |
           git clone https://github.com/opengrep/opengrep-rules.git
+          git -C opengrep-rules checkout --detach "${OPENGREP_RULES_REVISION}"
+
+      - name: Verify Opengrep findings and parser errors block the scan
+        run: |
+          export PATH='/home/runner/.opengrep/cli/latest':$PATH
+          bash .github/scan/verify-scanner.sh opengrep
 
       - name: Run Opengrep Scan (report)
         run: |
           export PATH='/home/runner/.opengrep/cli/latest':$PATH
-          OPENGREP_EXCLUDE_ARGS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${OPENGREP_EXCLUDE_RULES}" | xargs -I{} printf ' --exclude-rule %s' '{}')"
-          opengrep scan --config opengrep-rules/python ${OPENGREP_EXCLUDE_ARGS} --json -o "${{ runner.workspace }}/opengrep-results.json" .
+          bash .github/scan/opengrep-scan.sh "${{ runner.temp }}/opengrep-results.json"
 
       - name: Upload scan results
-        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: opengrep-results
-          path: "${{ runner.workspace }}/opengrep-results.json"
+          path: "${{ runner.temp }}/opengrep-results.json"
           retention-days: 60
 
-      - name: Run Opengrep Scan (alert)
-        run: |
-          export PATH='/home/runner/.opengrep/cli/latest':$PATH
-          OPENGREP_EXCLUDE_ARGS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${OPENGREP_EXCLUDE_RULES}" | xargs -I{} printf ' --exclude-rule %s' '{}')"
-          opengrep scan --config opengrep-rules/python ${OPENGREP_EXCLUDE_ARGS} --error .
+      - name: Check Opengrep report (findings and parsing errors)
+        if: ${{ !cancelled() }}
+        run: bash .github/scan/check-opengrep-report.sh "${{ runner.temp }}/opengrep-results.json"

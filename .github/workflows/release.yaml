@@ -4,6 +4,9 @@ on:
     tags:
       - "[0-9]+.[0-9]+.[0-9]+"
 
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   DOCKER_IMAGE_NAME: ${{ github.repository }}
@@ -11,7 +14,7 @@ env:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       image_tag: ${{ steps.names.outputs.image_tag }}
       image_name_base: ${{ steps.names.outputs.image_name_base }}
@@ -38,9 +41,11 @@ jobs:
           echo "image_name_latest=${IMAGE_NAME_BASE}:latest" >> $GITHUB_OUTPUT
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Prepare .env file
         run: |
@@ -48,7 +53,6 @@ jobs:
           echo "DJANGO_SECRET_KEY=test-secret-key" >> .env
           echo "DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,testserver" >> .env
           sudo install -d -o 1010 -g 1010 -m 0770 .data
-          env >> .env
 
       - name: Build image
         run: docker compose build test
@@ -58,20 +62,20 @@ jobs:
 
   build:
     needs: [prepare, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: read
       packages: write
-      attestations: write
-      id-token: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -79,7 +83,7 @@ jobs:
 
       - name: Extract metadata for docker image
         id: docker-image-meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ needs.prepare.outputs.image_name_base }}
           tags: |
@@ -88,7 +92,7 @@ jobs:
 
       - name: Build and push Docker image
         id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7.4.0
         with:
           context: .
           target: service
@@ -98,7 +102,7 @@ jobs:
 
   verify:
     needs: [prepare, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Verify docker images
@@ -111,7 +115,7 @@ jobs:
 
   create-release:
     needs: [prepare, build, verify]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref_type == 'tag'
 
     permissions:
@@ -119,9 +123,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Prepare release metadata
         id: release-meta
@@ -153,7 +158,7 @@ jobs:
           echo "body_file=release-body.md" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ needs.prepare.outputs.image_tag }}
           name: ${{ needs.prepare.outputs.image_tag }}
@@ -166,11 +171,13 @@ jobs:
 
   deploy:
     needs: [verify, prepare]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Prepare SSH file
         run: |

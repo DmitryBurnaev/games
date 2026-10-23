@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from django.conf import settings
-from django.db.utils import DatabaseError, OperationalError, ProgrammingError
+from django.db.utils import DatabaseError
 
 from .models import AppSetting
 from games.settings import DEFAULT_CHECKER_COUNT
@@ -41,7 +41,7 @@ def active_setting_values(keys: Iterable[AppSetting.Key]) -> dict[str, str]:
                 key__in=requested_keys, is_enabled=True
             ).values_list("key", "value")
         )
-    except DatabaseError, OperationalError, ProgrammingError:
+    except DatabaseError:
         return {}
 
 
