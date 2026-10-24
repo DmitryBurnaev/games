@@ -20,6 +20,7 @@ env:
   OPENGREP_EXCLUDE_RULES: ".github/scan/opengrep-exclude-rules.txt"
   TRUFFLEHOG_VERSION: "v3.90.12"
   GITLEAKS_VERSION: "v8.28.0"
+  GITLEAKS_IGNORE_PATH: ".github/scan/gitleaks-ignore.txt"
 
 jobs:
   trufflehog:
@@ -67,7 +68,7 @@ jobs:
       - name: Run Gitleaks (report)
         run: |
           export PATH='/home/runner/.gitleaks':$PATH
-          gitleaks git . --redact=100 --exit-code 0 --report-format json --report-path "${{ runner.temp }}/gitleaks-results.json"
+          gitleaks git . --gitleaks-ignore-path "${GITLEAKS_IGNORE_PATH}" --redact=100 --exit-code 0 --report-format json --report-path "${{ runner.temp }}/gitleaks-results.json"
 
       - name: Upload scan results
         if: ${{ !cancelled() }}
@@ -80,7 +81,7 @@ jobs:
       - name: Run Gitleaks (alert)
         run: |
           export PATH='/home/runner/.gitleaks':$PATH
-          gitleaks git . --redact=100 --verbose
+          gitleaks git . --gitleaks-ignore-path "${GITLEAKS_IGNORE_PATH}" --redact=100 --verbose
 
   opengrep:
     name: opengrep
