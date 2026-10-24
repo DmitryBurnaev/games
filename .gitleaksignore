@@ -1,2 +1,2 @@
-# False positive: Django ORM arguments, not a credential (issue #39).
+# Historical ORM false positive; current code uses setting_names (issue #39).
 a9033d4b8aac9eb60d90b0e8dd741d1bee7857a0:src/backgammon/app_settings.py:generic-api-key:41
