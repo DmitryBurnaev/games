@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from django.conf import settings
-from django.db.utils import DatabaseError, OperationalError, ProgrammingError
+from django.db.utils import DatabaseError
 
 from .models import AppSetting
 from games.settings import DEFAULT_CHECKER_COUNT
@@ -32,16 +32,16 @@ class GameRuntimeSettings:
 
 def active_setting_values(keys: Iterable[AppSetting.Key]) -> dict[str, str]:
     """Return enabled setting values in one query, with safe DB fallbacks."""
-    requested_keys = list(dict.fromkeys(keys))
-    if not requested_keys:
+    setting_names = list(dict.fromkeys(keys))
+    if not setting_names:
         return {}
     try:
         return dict(
             AppSetting.objects.filter(
-                key__in=requested_keys, is_enabled=True
+                key__in=setting_names, is_enabled=True
             ).values_list("key", "value")
         )
-    except DatabaseError, OperationalError, ProgrammingError:
+    except DatabaseError:
         return {}
 
 

@@ -136,7 +136,10 @@ class Game(models.Model):
     )
     board = models.JSONField(default=initial_board)
     borne_off = models.JSONField(default=dict)
+    # Empty JSON lists are valid game states; SQL NULL is not.
+    # nosemgrep: opengrep-rules.python.django.correctness.nontext-field-must-set-null-true
     dice = models.JSONField(default=list, blank=True)
+    # nosemgrep: opengrep-rules.python.django.correctness.nontext-field-must-set-null-true
     remaining_moves = models.JSONField(default=list, blank=True)
     has_rolled = models.BooleanField(default=False)
     head_moves_this_turn = models.PositiveSmallIntegerField(default=0)
@@ -225,6 +228,8 @@ class GameMove(models.Model):
         blank=True,
         null=True,
     )
+    # Empty JSON objects are valid metadata; SQL NULL is not.
+    # nosemgrep: opengrep-rules.python.django.correctness.nontext-field-must-set-null-true
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -243,6 +248,8 @@ class GamePositionSet(models.Model):
     )
     player = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     turn_number = models.PositiveIntegerField()
+    # Empty JSON objects are valid metadata; SQL NULL is not.
+    # nosemgrep: opengrep-rules.python.django.correctness.nontext-field-must-set-null-true
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
