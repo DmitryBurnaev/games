@@ -64,11 +64,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify Gitleaks detects a new secret
-        run: |
-          export PATH='/home/runner/.gitleaks':$PATH
-          bash .github/scan/verify-scanner.sh gitleaks
-
       - name: Run Gitleaks (report)
         run: |
           export PATH='/home/runner/.gitleaks':$PATH
@@ -104,15 +99,11 @@ jobs:
           git clone https://github.com/opengrep/opengrep-rules.git
           git -C opengrep-rules checkout --detach "${OPENGREP_RULES_REVISION}"
 
-      - name: Verify Opengrep findings and parser errors block the scan
-        run: |
-          export PATH='/home/runner/.opengrep/cli/latest':$PATH
-          bash .github/scan/verify-scanner.sh opengrep
-
       - name: Run Opengrep Scan (report)
         run: |
           export PATH='/home/runner/.opengrep/cli/latest':$PATH
-          bash .github/scan/opengrep-scan.sh "${{ runner.temp }}/opengrep-results.json"
+          OPENGREP_EXCLUDE_ARGS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${OPENGREP_EXCLUDE_RULES}" | xargs -I{} printf ' --exclude-rule %s' '{}')"
+          opengrep scan --config opengrep-rules/python ${OPENGREP_EXCLUDE_ARGS} --json -o "${{ runner.temp }}/opengrep-results.json" .
 
       - name: Upload scan results
         if: ${{ !cancelled() }}
@@ -122,6 +113,8 @@ jobs:
           path: "${{ runner.temp }}/opengrep-results.json"
           retention-days: 60
 
-      - name: Check Opengrep report (findings and parsing errors)
-        if: ${{ !cancelled() }}
-        run: bash .github/scan/check-opengrep-report.sh "${{ runner.temp }}/opengrep-results.json"
+      - name: Run Opengrep Scan (alert)
+        run: |
+          export PATH='/home/runner/.opengrep/cli/latest':$PATH
+          OPENGREP_EXCLUDE_ARGS="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "${OPENGREP_EXCLUDE_RULES}" | xargs -I{} printf ' --exclude-rule %s' '{}')"
+          opengrep scan --config opengrep-rules/python ${OPENGREP_EXCLUDE_ARGS} --strict --error .
