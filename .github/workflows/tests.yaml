@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - "main"
-      - "codex/39-security-scans-actions"
 
 permissions:
   contents: read
