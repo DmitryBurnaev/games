@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - "main"
-      - "codex/39-security-scans-actions"
   schedule:
     - cron: "0 0 * * 1"
 
