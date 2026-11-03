@@ -11,6 +11,7 @@ from channels.testing import WebsocketCommunicator
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.apps import apps as django_apps
+from django.core.exceptions import ValidationError
 from django.forms import modelform_factory
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
@@ -48,7 +49,9 @@ from .services import (
     create_roll,
     finish_blocked_turn,
     roll_dice_from_player_bag,
+    roll_dice_for_game,
     serialize_game,
+    switch_turn,
     undo_last_move,
 )
 
@@ -1314,6 +1317,105 @@ class GameRulesTests(TestCase):
         self.assertEqual(game.dice, [3, 3])
         self.assertEqual(game.remaining_moves, [3, 3, 3, 3])
 
+    def test_doubles_only_rolls_for_both_players_in_every_dice_mode(self) -> None:
+        """Every face maps to one double without using or consuming a player bag."""
+        for mode in ("independent", "player_bag"):
+            with self.subTest(mode=mode), override_settings(BACKGAMMON_DICE_MODE=mode):
+                game = Game.objects.create(
+                    white_player=self.white,
+                    black_player=self.black,
+                    current_player=self.white,
+                    status=Game.Status.ACTIVE,
+                    doubles_only=True,
+                )
+                with (
+                    patch("backgammon.services.secrets.randbelow") as random_face,
+                    patch("backgammon.services.roll_dice_from_player_bag") as bag,
+                    patch("backgammon.services.roll_dice") as independent,
+                ):
+                    for face in range(1, 7):
+                        for player in (self.white, self.black):
+                            random_face.reset_mock(return_value=True)
+                            random_face.return_value = face - 1
+                            self.assertEqual(create_roll(game, player), [face, face])
+                            random_face.assert_called_once_with(6)
+                            game.refresh_from_db()
+                            self.assertTrue(game.doubles_only)
+                            self.assertEqual(game.dice, [face, face])
+                            self.assertEqual(game.remaining_moves, [face] * 4)
+                            self.assertTrue(game.has_rolled)
+                            switch_turn(game)
+                            game.save()
+                    bag.assert_not_called()
+                    independent.assert_not_called()
+                self.assertEqual(
+                    game.moves.filter(action=GameMove.Action.ROLL).count(), 12
+                )
+                payload = serialize_game(game, self.white)
+                self.assertTrue(payload["doubles_only"])
+                self.assertEqual(payload["double_rolls"], {"white": 6, "black": 6})
+                for color in Game.Color.values:
+                    self.assertEqual(
+                        payload["dice_statistics"][color]["total_points"], 84
+                    )
+
+    @override_settings(BACKGAMMON_DICE_MODE="independent")
+    @patch("backgammon.services.secrets.randbelow", side_effect=[0, 5])
+    def test_regular_game_keeps_independent_dice(self, random_face) -> None:
+        """Unchecked games still draw each die separately and can roll non-doubles."""
+        game = self.active_game()
+        self.assertFalse(game.doubles_only)
+        self.assertEqual(roll_dice_for_game(game, self.white), [1, 6])
+        self.assertEqual(random_face.call_count, 2)
+
+    def test_doubles_only_cannot_change_after_creation(self) -> None:
+        """Both enabling and disabling a persisted game's mode are rejected."""
+        for initial_mode in (False, True):
+            for update_fields in (None, ["doubles_only"]):
+                with self.subTest(
+                    initial_mode=initial_mode, update_fields=update_fields
+                ):
+                    game = Game.objects.create(doubles_only=initial_mode)
+                    game.doubles_only = not initial_mode
+                    with self.assertRaisesMessage(ValidationError, "cannot change"):
+                        game.save(update_fields=update_fields)
+                    game.refresh_from_db()
+                    self.assertEqual(game.doubles_only, initial_mode)
+
+    @patch("backgammon.services.roll_die", return_value=1)
+    def test_doubles_only_victory_updates_normal_statistics(self, mocked_roll) -> None:
+        """Double games use normal victory stats and exclude the winning roll."""
+        board = [None] * 24
+        board[22] = {"color": Game.Color.WHITE, "count": 1}
+        board[12] = {"color": Game.Color.BLACK, "count": 1}
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+            checker_count=1,
+            board=board,
+            doubles_only=True,
+        )
+        create_roll(game, self.white)
+        apply_move(game, self.white, 22, 1)
+        self.assertEqual(serialize_game(game, self.white)["double_rolls"]["white"], 1)
+        apply_move(game, self.white, 23, 1)
+        game.refresh_from_db()
+
+        mocked_roll.assert_called_once_with()
+        self.assertEqual(game.status, Game.Status.FINISHED)
+        self.assertEqual(game.victory_type, Game.VictoryType.MARS)
+        winner_stats = PlayerStats.objects.get(user=self.white)
+        loser_stats = PlayerStats.objects.get(user=self.black)
+        self.assertEqual((winner_stats.games_played, winner_stats.mars_wins), (1, 1))
+        self.assertEqual((loser_stats.games_played, loser_stats.mars_losses), (1, 1))
+        payload = serialize_game(game, self.white)
+        self.assertTrue(payload["doubles_only"])
+        self.assertEqual(payload["double_rolls"]["white"], 0)
+        self.assertEqual(payload["dice_statistics"]["white"]["total_points"], 0)
+        self.assertEqual(payload["skipped_moves"]["white"], 0)
+
     def test_serialized_game_includes_timestamps_and_double_roll_counts(self) -> None:
         """The detail UI receives final-game stats for rendering."""
         self.white.first_name = "White"
@@ -1676,6 +1778,7 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, 'id="gameSetupModal"')
         self.assertContains(response, 'value="black" checked')
         self.assertContains(response, 'name="checker_count"')
+        self.assertContains(response, 'type="checkbox" name="doubles_only"')
         self.assertContains(response, 'value="5"')
         self.assertContains(response, 'value="10"')
         self.assertContains(response, 'value="15" checked')
@@ -1724,6 +1827,64 @@ class GameLobbyTests(TestCase):
         self.assertEqual(game.checker_count, 5)
         self.assertEqual(game.board, initial_board_for_count(5))
         self.assertEqual(game.party_number, 1)
+        self.assertFalse(game.doubles_only)
+
+    def test_create_game_persists_doubles_only_and_shows_mode(self) -> None:
+        """The mode is visible to the creator, invited player, and on the card."""
+        response = self.client.post(
+            reverse("backgammon:create_game"),
+            {"opponent": self.opponent.pk, "doubles_only": "on"},
+        )
+        game = Game.objects.get()
+        self.assertTrue(game.doubles_only)
+        detail_url = reverse("backgammon:game_detail", args=[game.pk])
+        self.assertRedirects(response, detail_url)
+        badge = '<span class="badge text-bg-secondary">Только дубли</span>'
+        self.assertContains(self.client.get(reverse("backgammon:game_list")), badge)
+        self.assertContains(self.client.get(detail_url), "Только дубли")
+        self.client.force_login(self.opponent)
+        self.assertContains(self.client.get(reverse("backgammon:game_list")), badge)
+        self.assertContains(self.client.get(detail_url), "Только дубли")
+
+    def test_create_game_rejects_invalid_doubles_only(self) -> None:
+        """Malformed checkbox values must not silently select a dice mode."""
+        response = self.client.post(
+            reverse("backgammon:create_game"),
+            {"opponent": self.opponent.pk, "doubles_only": "invalid"},
+            follow=True,
+        )
+        self.assertContains(response, "Выберите корректный режим кубиков.")
+        self.assertFalse(Game.objects.exists())
+
+    def test_regular_game_card_has_no_doubles_only_badge(self) -> None:
+        """Regular games retain their usual metadata."""
+        game = Game.objects.create(white_player=self.viewer)
+        self.assertNotContains(
+            self.client.get(reverse("backgammon:game_detail", args=[game.pk])),
+            "Только дубли",
+        )
+        self.assertNotContains(
+            self.client.get(reverse("backgammon:game_list")),
+            '<span class="badge text-bg-secondary">Только дубли</span>',
+        )
+
+    def test_doubles_only_mode_is_shown_in_archive(self) -> None:
+        """Finished games keep their mode label in the archive and game card."""
+        game = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            winner=self.viewer,
+            status=Game.Status.FINISHED,
+            doubles_only=True,
+        )
+        self.assertContains(
+            self.client.get(reverse("backgammon:finished_game_archive")),
+            "Только дубли",
+        )
+        self.assertContains(
+            self.client.get(reverse("backgammon:game_detail", args=[game.pk])),
+            "Только дубли",
+        )
 
     def test_create_game_numbers_planned_games_for_same_pair_sequentially(
         self,

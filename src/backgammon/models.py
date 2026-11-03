@@ -129,6 +129,7 @@ class Game(models.Model):
     status = models.CharField(max_length=16, choices=Status, default=Status.WAITING)
     victory_type = models.CharField(max_length=8, choices=VictoryType, blank=True)
     checker_count = models.PositiveSmallIntegerField(default=DEFAULT_CHECKER_COUNT)
+    doubles_only = models.BooleanField(default=False, editable=False)
     party_number = models.PositiveIntegerField(
         blank=True,
         null=True,
@@ -160,7 +161,21 @@ class Game(models.Model):
         return f"Game #{self.pk}: {white} vs {black}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Ensure borne-off counters are initialized before saving."""
+        """Initialize counters and preserve the dice mode selected at creation."""
+        update_fields = kwargs.get("update_fields")
+        if not self._state.adding and (
+            update_fields is None or "doubles_only" in update_fields
+        ):
+            original_mode = (
+                type(self)
+                .objects.using(self._state.db)
+                .values_list("doubles_only", flat=True)
+                .get(pk=self.pk)
+            )
+            if self.doubles_only != original_mode:
+                raise ValidationError(
+                    {"doubles_only": "The dice mode cannot change after creation."}
+                )
         if not self.borne_off:
             self.borne_off = {self.Color.WHITE: 0, self.Color.BLACK: 0}
         super().save(*args, **kwargs)

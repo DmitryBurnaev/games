@@ -129,6 +129,7 @@ class GameAdmin(admin.ModelAdmin):
         "planned_opponent",
         "status",
         "checker_count",
+        "doubles_only",
         "current_player",
         "winner",
         "victory_type",
@@ -141,7 +142,13 @@ class GameAdmin(admin.ModelAdmin):
         "black_player__username",
         "winner__username",
     )
-    readonly_fields = ("created_at", "updated_at", "started_at", "finished_at")
+    readonly_fields = (
+        "doubles_only",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "finished_at",
+    )
 
 
 @admin.register(BackgammonPlayerPreference)

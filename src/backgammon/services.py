@@ -96,6 +96,9 @@ def roll_dice_from_player_bag(game: Game, user: Any) -> list[int]:
 
 def roll_dice_for_game(game: Game, user: Any) -> list[int]:
     """Return dice using the configured game dice mode."""
+    if game.doubles_only:
+        die = roll_die()
+        return [die, die]
     if backgammon_dice_mode() == DICE_MODE_PLAYER_BAG:
         return roll_dice_from_player_bag(game, user)
     return roll_dice()
@@ -1232,6 +1235,7 @@ def common_game_projection(context: GameProjectionContext) -> dict[str, Any]:
             for color in Game.Color.values
         },
         "checker_count": game.checker_count,
+        "doubles_only": game.doubles_only,
         "board": game.board,
         "borne_off": game.borne_off,
         "dice": game.dice,

@@ -241,6 +241,11 @@ def create_game(request: HttpRequest) -> HttpResponse:
         messages.error(request, "Выберите доступное количество шашек.")
         return redirect("backgammon:game_list")
 
+    doubles_only = request.POST.get("doubles_only", "")
+    if doubles_only not in {"", "on"}:
+        messages.error(request, "Выберите корректный режим кубиков.")
+        return redirect("backgammon:game_list")
+
     try:
         opponent_id = int(request.POST["opponent"])
     except KeyError, ValueError:
@@ -261,6 +266,7 @@ def create_game(request: HttpRequest) -> HttpResponse:
             **player_field,
             planned_opponent=opponent,
             checker_count=checker_count,
+            doubles_only=doubles_only == "on",
             board=initial_board_for_count(checker_count),
         )
         assign_party_number(game, pending_opponent_id=opponent.pk)
