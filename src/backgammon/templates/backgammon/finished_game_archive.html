@@ -16,7 +16,7 @@
         <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
             <span class="d-flex flex-column gap-1">
                 <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.white_player_label }} ⇆ {{ game.black_player_label }}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
-                <span class="text-secondary small">{{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек</span>
+                <span class="text-secondary small">{{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек{% if game.doubles_only %} · <span class="badge text-bg-secondary">Только дубли</span>{% endif %}</span>
             </span>
             <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">{% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}</span>
         </a>

@@ -57,6 +57,10 @@
                         {% endfor %}
                     </div>
                 </fieldset>
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="doubles_only" id="setup-doubles-only" value="on">
+                    <label class="form-check-label" for="setup-doubles-only">Только дубли</label>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Отмена</button>
@@ -81,6 +85,7 @@
                         <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.white_player_label }} ⇆ {{ game.black_player_label }}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
                         <span class="text-secondary small">
                             {{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек
+                            {% if game.doubles_only %} · <span class="badge text-bg-secondary">Только дубли</span>{% endif %}
                         </span>
                     </span>
                     {% if game.winner %}
@@ -112,6 +117,7 @@
                         <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.waiting_player_label }}</span>
                         <span class="text-secondary small">
                             {{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек
+                            {% if game.doubles_only %} · <span class="badge text-bg-secondary">Только дубли</span>{% endif %}
                         </span>
                     </span>
                     <span class="badge text-bg-primary flex-shrink-0">Войти</span>
