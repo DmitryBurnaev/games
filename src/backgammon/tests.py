@@ -1839,12 +1839,12 @@ class GameLobbyTests(TestCase):
         self.assertTrue(game.doubles_only)
         detail_url = reverse("backgammon:game_detail", args=[game.pk])
         self.assertRedirects(response, detail_url)
-        badge = '<span class="badge text-bg-secondary">Только дубли</span>'
+        badge = '<span class="badge text-bg-secondary">дубли</span>'
         self.assertContains(self.client.get(reverse("backgammon:game_list")), badge)
-        self.assertContains(self.client.get(detail_url), "Только дубли")
+        self.assertContains(self.client.get(detail_url), "Только дубликаты")
         self.client.force_login(self.opponent)
         self.assertContains(self.client.get(reverse("backgammon:game_list")), badge)
-        self.assertContains(self.client.get(detail_url), "Только дубли")
+        self.assertContains(self.client.get(detail_url), "Только дубликаты")
 
     def test_create_game_rejects_invalid_doubles_only(self) -> None:
         """Malformed checkbox values must not silently select a dice mode."""
@@ -1859,13 +1859,16 @@ class GameLobbyTests(TestCase):
     def test_regular_game_card_has_no_doubles_only_badge(self) -> None:
         """Regular games retain their usual metadata."""
         game = Game.objects.create(white_player=self.viewer)
+        detail = self.client.get(reverse("backgammon:game_detail", args=[game.pk]))
+        self.assertNotContains(detail, 'id="additional-options-panel"')
+        self.assertNotContains(detail, "Дополнительно")
         self.assertNotContains(
-            self.client.get(reverse("backgammon:game_detail", args=[game.pk])),
-            "Только дубли",
+            detail,
+            "Только дубликаты",
         )
         self.assertNotContains(
             self.client.get(reverse("backgammon:game_list")),
-            '<span class="badge text-bg-secondary">Только дубли</span>',
+            '<span class="badge text-bg-secondary">дубли</span>',
         )
 
     def test_doubles_only_mode_is_shown_in_archive(self) -> None:
@@ -1879,12 +1882,37 @@ class GameLobbyTests(TestCase):
         )
         self.assertContains(
             self.client.get(reverse("backgammon:finished_game_archive")),
-            "Только дубли",
+            "дубли",
         )
         self.assertContains(
             self.client.get(reverse("backgammon:game_detail", args=[game.pk])),
-            "Только дубли",
+            "Только дубликаты",
         )
+
+    def test_additional_options_section_precedes_results_for_each_game_status(
+        self,
+    ) -> None:
+        """Enabled options use the detail rows above results throughout the game."""
+        for status in Game.Status.values:
+            with self.subTest(status=status):
+                game = Game.objects.create(
+                    white_player=self.viewer,
+                    black_player=self.opponent,
+                    status=status,
+                    doubles_only=True,
+                )
+                response = self.client.get(
+                    reverse("backgammon:game_detail", args=[game.pk])
+                )
+                self.assertContains(response, 'id="additional-options-panel"', count=1)
+                self.assertContains(response, "Дополнительно", count=1)
+                self.assertContains(response, "<dt>Режим</dt>", html=True)
+                self.assertContains(response, "<dd>Только дубликаты</dd>", html=True)
+                html = response.content.decode()
+                self.assertLess(
+                    html.index('id="additional-options-panel"'),
+                    html.index('id="finished-stats-panel"'),
+                )
 
     def test_create_game_numbers_planned_games_for_same_pair_sequentially(
         self,
