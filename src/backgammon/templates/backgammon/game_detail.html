@@ -83,20 +83,14 @@
             </div>
 
             <div id="move-panel" class="move-panel"></div>
-            {% if game.doubles_only %}
-                <section id="additional-options-panel" class="additional-options-panel" aria-labelledby="additional-options-title">
-                    <h2 id="additional-options-title" class="finished-stats-title">Дополнительно</h2>
-                    <dl class="small">
-                        <dt>Режим</dt>
-                        <dd>Только дубликаты</dd>
-                    </dl>
-                </section>
-            {% endif %}
             <div id="finished-stats-panel" class="finished-stats-panel"></div>
             <div id="error-line" class="text-danger small mt-3"></div>
             <div class="game-footer-meta text-secondary small">
                 <div class="game-id-line">⚙️ <span id="game-id-value">{{ game.pk }}</span></div>
                 <div id="game-duration-line" class="game-duration-line d-none">⌛ <span id="game-duration">—</span></div>
+                {% if game.doubles_only %}
+                    <span id="game-mode" class="game-mode-line" title="Только дубликаты" aria-label="Режим: Только дубликаты">🎲🎲</span>
+                {% endif %}
             </div>
             <button id="surrender-button" class="btn btn-outline-danger btn-sm surrender-button{% if game.status != 'active' %} d-none{% endif %}" type="button" aria-label="Сдаться" title="Сдаться">🙌</button>
             <div id="domovoy-pop" class="domovoy-pop" aria-hidden="true">

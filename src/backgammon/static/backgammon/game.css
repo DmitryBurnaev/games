@@ -234,6 +234,13 @@ body {
     white-space: nowrap;
 }
 
+.game-mode-line {
+    border-left: 1px solid #adb5bd;
+    padding-left: .75rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .surrender-button {
     position: absolute;
     right: 1rem;
@@ -405,10 +412,6 @@ body {
     display: block;
 }
 
-.additional-options-panel {
-    margin-top: 1rem;
-}
-
 .finished-stats-title {
     color: #2b3035;
     font-size: 1.08rem;
@@ -420,26 +423,20 @@ body {
     margin-top: 1rem;
 }
 
-.finished-stats-panel dl,
-.additional-options-panel dl {
+.finished-stats-panel dl {
     display: grid;
     grid-template-columns: 10.5rem minmax(0, 1fr);
     gap: .4rem .75rem;
     margin: 0;
 }
 
-.finished-stats-panel dt,
-.additional-options-panel dt {
+.finished-stats-panel dt {
     color: #6c757d;
     font-weight: 600;
 }
 
-.finished-stats-panel dd,
-.additional-options-panel dd {
-    margin: 0;
-}
-
 .finished-stats-panel dd {
+    margin: 0;
     white-space: nowrap;
 }
 

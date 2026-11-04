@@ -1861,6 +1861,7 @@ class GameLobbyTests(TestCase):
         game = Game.objects.create(white_player=self.viewer)
         detail = self.client.get(reverse("backgammon:game_detail", args=[game.pk]))
         self.assertNotContains(detail, 'id="additional-options-panel"')
+        self.assertNotContains(detail, 'id="game-mode"')
         self.assertNotContains(detail, "Дополнительно")
         self.assertNotContains(
             detail,
@@ -1889,10 +1890,10 @@ class GameLobbyTests(TestCase):
             "Только дубликаты",
         )
 
-    def test_additional_options_section_precedes_results_for_each_game_status(
+    def test_doubles_mode_marker_follows_duration_for_each_game_status(
         self,
     ) -> None:
-        """Enabled options use the detail rows above results throughout the game."""
+        """The mode appears after duration in the footer throughout the game."""
         for status in Game.Status.values:
             with self.subTest(status=status):
                 game = Game.objects.create(
@@ -1904,14 +1905,22 @@ class GameLobbyTests(TestCase):
                 response = self.client.get(
                     reverse("backgammon:game_detail", args=[game.pk])
                 )
-                self.assertContains(response, 'id="additional-options-panel"', count=1)
-                self.assertContains(response, "Дополнительно", count=1)
-                self.assertContains(response, "<dt>Режим</dt>", html=True)
-                self.assertContains(response, "<dd>Только дубликаты</dd>", html=True)
+                self.assertNotContains(response, "Дополнительно")
+                self.assertContains(
+                    response,
+                    '<span id="game-mode" class="game-mode-line" '
+                    'title="Только дубликаты" aria-label="Режим: Только дубликаты">🎲🎲</span>',
+                    count=1,
+                    html=True,
+                )
                 html = response.content.decode()
                 self.assertLess(
-                    html.index('id="additional-options-panel"'),
-                    html.index('id="finished-stats-panel"'),
+                    html.index('id="game-id-value"'),
+                    html.index('id="game-duration-line"'),
+                )
+                self.assertLess(
+                    html.index('id="game-duration-line"'),
+                    html.index('id="game-mode"'),
                 )
 
     def test_create_game_numbers_planned_games_for_same_pair_sequentially(
