@@ -315,6 +315,11 @@ Supported runtime keys:
 
 - `BACKGAMMON_DEBUG_TOOLS`: show or hide development helpers and their endpoints.
 - `BACKGAMMON_DICE_MODE`: `independent` or `player_bag`.
+- `BACKGAMMON_DOUBLES_SELECTION_MODE`: `FIRST` (default), `MIN`, or `MAX`.
+  Doubles-only games draw two independent dice and repeat the selected value;
+  they bypass `player_bag`. The admin override is resolved on every roll.
+  Missing, disabled, or invalid DB values use the environment fallback; an invalid
+  environment value uses `FIRST`. The create-game modal displays the effective mode.
 - `BACKGAMMON_ANIMATIONS_ENABLED`: enable or disable checker movement animations.
 - `BACKGAMMON_POLL_INTERVAL_MS`: polling fallback interval, clamped to at least
   `250` milliseconds.
