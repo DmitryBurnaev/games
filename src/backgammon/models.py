@@ -21,6 +21,10 @@ class AppSetting(models.Model):
     class Key(models.TextChoices):
         BACKGAMMON_DEBUG_TOOLS = "BACKGAMMON_DEBUG_TOOLS", "Backgammon debug tools"
         BACKGAMMON_DICE_MODE = "BACKGAMMON_DICE_MODE", "Backgammon dice mode"
+        BACKGAMMON_DOUBLES_SELECTION_MODE = (
+            "BACKGAMMON_DOUBLES_SELECTION_MODE",
+            "Backgammon doubles selection mode",
+        )
         BACKGAMMON_ANIMATIONS_ENABLED = (
             "BACKGAMMON_ANIMATIONS_ENABLED",
             "Backgammon animations enabled",

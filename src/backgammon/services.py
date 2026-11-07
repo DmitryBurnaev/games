@@ -10,8 +10,11 @@ from django.utils import timezone
 
 from .app_settings import (
     DICE_MODE_PLAYER_BAG,
+    DOUBLES_SELECTION_MIN,
+    DOUBLES_SELECTION_MAX,
     GameRuntimeSettings,
     backgammon_dice_mode,
+    backgammon_doubles_selection_mode,
     backgammon_game_runtime_settings,
     backgammon_notification_display_ms,
     backgammon_quick_notifications_enabled,
@@ -97,7 +100,14 @@ def roll_dice_from_player_bag(game: Game, user: Any) -> list[int]:
 def roll_dice_for_game(game: Game, user: Any) -> list[int]:
     """Return dice using the configured game dice mode."""
     if game.doubles_only:
-        die = roll_die()
+        mode = backgammon_doubles_selection_mode()
+        dice = roll_dice()
+        if mode == DOUBLES_SELECTION_MIN:
+            die = min(dice)
+        elif mode == DOUBLES_SELECTION_MAX:
+            die = max(dice)
+        else:
+            die = dice[0]
         return [die, die]
     if backgammon_dice_mode() == DICE_MODE_PLAYER_BAG:
         return roll_dice_from_player_bag(game, user)

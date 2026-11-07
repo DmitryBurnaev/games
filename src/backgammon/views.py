@@ -20,8 +20,10 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .app_settings import (
+    DOUBLES_SELECTION_LABELS,
     backgammon_checker_count_presets,
     backgammon_debug_tools,
+    backgammon_doubles_selection_mode,
     backgammon_game_runtime_settings,
 )
 from .models import (
@@ -195,6 +197,9 @@ def game_list(request: HttpRequest) -> HttpResponse:
             "default_checker_count": DEFAULT_CHECKER_COUNT,
             "default_opponent_id": default_opponent_for(request.user),
             "checker_count_presets": checker_count_presets,
+            "doubles_selection_label": DOUBLES_SELECTION_LABELS[
+                backgammon_doubles_selection_mode()
+            ],
             "opponents": get_user_model()
             .objects.exclude(pk=request.user.pk)
             .order_by("username"),

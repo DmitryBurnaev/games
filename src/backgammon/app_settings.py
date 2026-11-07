@@ -15,6 +15,15 @@ FALSE_VALUES = {"0", "false", "no", "off"}
 DICE_MODE_INDEPENDENT = "independent"
 DICE_MODE_PLAYER_BAG = "player_bag"
 DICE_MODES = {DICE_MODE_INDEPENDENT, DICE_MODE_PLAYER_BAG}
+DOUBLES_SELECTION_FIRST = "FIRST"
+DOUBLES_SELECTION_MIN = "MIN"
+DOUBLES_SELECTION_MAX = "MAX"
+DOUBLES_SELECTION_LABELS = {
+    DOUBLES_SELECTION_FIRST: "выбираем первый",
+    DOUBLES_SELECTION_MIN: "выбираем минимальный",
+    DOUBLES_SELECTION_MAX: "выбираем максимальный",
+}
+DOUBLES_SELECTION_MODES = set(DOUBLES_SELECTION_LABELS)
 MIN_CHECKER_COUNT = 1
 MAX_CHECKER_COUNT = 20
 
@@ -135,6 +144,18 @@ def backgammon_dice_mode() -> str:
         AppSetting.Key.BACKGAMMON_DICE_MODE,
         lambda: settings.BACKGAMMON_DICE_MODE,
         DICE_MODES,
+    )
+
+
+def backgammon_doubles_selection_mode() -> str:
+    """Resolve double selection on every roll, with a validated env fallback."""
+    fallback = settings.BACKGAMMON_DOUBLES_SELECTION_MODE.strip()
+    if fallback not in DOUBLES_SELECTION_MODES:
+        fallback = DOUBLES_SELECTION_FIRST
+    return choice_setting(
+        AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE,
+        lambda: fallback,
+        DOUBLES_SELECTION_MODES,
     )
 
 

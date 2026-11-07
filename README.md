@@ -139,6 +139,7 @@ Runtime variables are defined in `.env.template`.
 | `REDIS_URL`                        | Yes for WS/prod        | `redis://redis:6379/0` in Docker        | Redis URL used by Django Channels for WebSocket game state fan-out.         |
 | `BACKGAMMON_DEBUG_TOOLS`           | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                          |
 | `BACKGAMMON_DICE_MODE`             | No                     | `independent`                           | Dice generation mode: `independent` or `player_bag`.                        |
+| `BACKGAMMON_DOUBLES_SELECTION_MODE` | No                     | `FIRST`                                 | Doubles-only selection: `FIRST`, `MIN`, or `MAX` from two independent dice.   |
 | `BACKGAMMON_ANIMATIONS_ENABLED`    | No                     | `true`                                  | Enables checker movement animations in the board UI.                        |
 | `BACKGAMMON_POLL_INTERVAL_MS`      | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
 | `BACKGAMMON_CHECKER_COUNT_PRESETS` | No                     | `10,13,15`                              | Comma-separated checker-count choices for the new-game setup dialog.        |
@@ -147,6 +148,29 @@ Runtime variables are defined in `.env.template`.
 
 Local non-Docker runs can omit `.env`; settings default to `.data/db.sqlite3`
 and an in-memory WebSocket channel layer.
+
+### Doubles-only selection
+
+For games created with “Только дубликаты”, each roll generates two independent
+fair dice, selects one value, and returns it on both dice with four available moves:
+
+| Mode | Selection | Input (2, 5) | Input (5, 2) | Weights out of 36 for values 1 through 6 |
+|------|-----------|--------------|--------------|-----------------------------------------|
+| `FIRST` | First die | 2/2 | 5/5 | 6, 6, 6, 6, 6, 6 |
+| `MIN` | Minimum | 2/2 | 2/2 | 11, 9, 7, 5, 3, 1 |
+| `MAX` | Maximum | 5/5 | 5/5 | 1, 3, 5, 7, 9, 11 |
+
+`FIRST` preserves uniform doubles. `MIN` favors smaller values; `MAX` favors larger
+values. Equal input dice remain the same double in every mode.
+
+An enabled valid `BACKGAMMON_DOUBLES_SELECTION_MODE` row in Django admin overrides
+the environment setting. Missing, disabled, or invalid database values fall back
+to the environment, and an invalid environment value falls back to `FIRST`.
+The migration seeds a disabled `FIRST` row. Changes take effect on the next roll,
+including in active games, without modifying already rolled dice or history.
+The create-game dialog shows the effective selection mode when the page loads.
+Doubles-only games bypass `player_bag`; regular games retain their configured
+`BACKGAMMON_DICE_MODE` behavior.
 
 Example production-ish `.env`:
 
