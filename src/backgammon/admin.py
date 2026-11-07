@@ -4,6 +4,7 @@ from django.utils.safestring import mark_safe
 
 from .app_settings import (
     DICE_MODES,
+    DOUBLES_SELECTION_MODES,
     FALSE_VALUES,
     MAX_CHECKER_COUNT,
     MIN_CHECKER_COUNT,
@@ -31,6 +32,16 @@ APP_SETTING_VALUE_HELP = mark_safe(
     "Allowed values by key:<br>"
     "BACKGAMMON_DEBUG_TOOLS: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_DICE_MODE: independent, player_bag<br>"
+    "BACKGAMMON_DOUBLES_SELECTION_MODE: FIRST, MIN, MAX (default FIRST). "
+    "Only for doubles-only games; draw two independent dice once and repeat the selected value:<br>"
+    "FIRST: select the first die; (2, 5) becomes 2/2, (5, 2) becomes 5/5. "
+    "Every double has probability 1/6.<br>"
+    "MIN: select the minimum; (2, 5) and (5, 2) become 2/2. Favors smaller doubles.<br>"
+    "MAX: select the maximum; (2, 5) and (5, 2) become 5/5. Favors larger doubles.<br>"
+    "Equal input values stay unchanged in every mode. "
+    "Weights out of 36 for doubles 1/1 through 6/6: "
+    "FIRST = 6, 6, 6, 6, 6, 6; MIN = 11, 9, 7, 5, 3, 1; MAX = 1, 3, 5, 7, 9, 11.<br>"
+    "Changes apply to the next roll, including active games; existing dice and history stay unchanged.<br>"
     "BACKGAMMON_ANIMATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED: true, false, 1, 0, yes, no, on, off<br>"
     "BACKGAMMON_POLL_INTERVAL_MS: integer milliseconds, minimum effective value is 250<br>"
@@ -69,6 +80,11 @@ class AppSettingAdminForm(forms.ModelForm):
         if key == AppSetting.Key.BACKGAMMON_DICE_MODE:
             if value not in DICE_MODES:
                 raise forms.ValidationError("Use one of: independent, player_bag.")
+            return value
+
+        if key == AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE:
+            if value not in DOUBLES_SELECTION_MODES:
+                raise forms.ValidationError("Use one of: FIRST, MIN, MAX.")
             return value
 
         if key in {

@@ -1,8 +1,9 @@
 import json
+from collections import Counter
 from importlib import import_module
 from datetime import datetime, timezone as datetime_timezone
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -12,6 +13,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.apps import apps as django_apps
 from django.core.exceptions import ValidationError
+from django.db import connection
 from django.forms import modelform_factory
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
@@ -21,6 +23,7 @@ from .app_settings import (
     backgammon_checker_count_presets,
     backgammon_debug_tools,
     backgammon_dice_mode,
+    backgammon_doubles_selection_mode,
     backgammon_notification_display_ms,
     backgammon_poll_interval_ms,
     backgammon_quick_notifications_enabled,
@@ -124,6 +127,92 @@ class UserRegistrationTests(TestCase):
 
 class AppSettingsTests(TestCase):
     """Coverage for DB-backed app settings with environment fallback."""
+
+    def test_doubles_selection_setting_defaults_and_fallbacks(self) -> None:
+        """Only an enabled valid DB choice overrides a validated environment choice."""
+        key = AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE
+        for database_value, enabled, environment, expected in [
+            (None, False, "FIRST", "FIRST"),
+            (None, False, "MIN", "MIN"),
+            (None, False, "MAX", "MAX"),
+            ("MAX", True, "MIN", "MAX"),
+            ("MAX", False, "MIN", "MIN"),
+            ("invalid", True, "MIN", "MIN"),
+            (None, False, "invalid", "FIRST"),
+            ("invalid", True, "invalid", "FIRST"),
+            ("MIN", True, "invalid", "MIN"),
+            (" MIN ", True, "FIRST", "MIN"),
+            (None, False, " MAX ", "MAX"),
+        ]:
+            with self.subTest(
+                database=database_value, enabled=enabled, env=environment
+            ):
+                AppSetting.objects.filter(key=key).delete()
+                if database_value is not None:
+                    AppSetting.objects.create(
+                        key=key, value=database_value, is_enabled=enabled
+                    )
+                with override_settings(BACKGAMMON_DOUBLES_SELECTION_MODE=environment):
+                    self.assertEqual(backgammon_doubles_selection_mode(), expected)
+
+    def test_doubles_selection_migration_seeds_without_overwriting(self) -> None:
+        """The setting is discoverable in admin without enabling an override."""
+        key = AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE
+        setting = AppSetting.objects.get(key=key)
+        self.assertEqual(setting.value, "FIRST")
+        self.assertFalse(setting.is_enabled)
+        setting.value = "MAX"
+        setting.is_enabled = True
+        setting.save()
+        migration = import_module(
+            "backgammon.migrations.0014_doubles_selection_setting"
+        )
+        migration.seed_doubles_selection_setting(
+            django_apps, connection.schema_editor()
+        )
+        setting.refresh_from_db()
+        self.assertEqual(setting.value, "MAX")
+        self.assertTrue(setting.is_enabled)
+
+    def test_admin_form_validates_doubles_selection_mode(self) -> None:
+        """Selection modes are uppercase choices, with whitespace normalized."""
+        setting = AppSetting.objects.get(
+            key=AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE
+        )
+        for value in ("FIRST", "MIN", "MAX", " MAX ", "first", "weighted", ""):
+            with self.subTest(value=value):
+                form = AppSettingAdminForm(
+                    instance=setting,
+                    data={"key": setting.key, "value": value, "is_enabled": "on"},
+                )
+                if value.strip() in {"FIRST", "MIN", "MAX"}:
+                    self.assertTrue(form.is_valid(), form.errors)
+                    self.assertEqual(form.cleaned_data["value"], value.strip())
+                else:
+                    self.assertFalse(form.is_valid())
+                    self.assertIn("value", form.errors)
+
+    def test_admin_help_describes_doubles_selection(self) -> None:
+        """Admin help explains choices, reversed inputs, and biased distributions."""
+        form = AppSettingAdminForm()
+        self.assertIn(
+            AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE,
+            dict(form.fields["key"].choices),
+        )
+        help_text = str(form.fields["value"].help_text)
+        for text in (
+            "FIRST, MIN, MAX",
+            "first die",
+            "minimum",
+            "maximum",
+            "(2, 5)",
+            "(5, 2)",
+            "1/6",
+            "11, 9, 7, 5, 3, 1",
+            "1, 3, 5, 7, 9, 11",
+            "next roll",
+        ):
+            self.assertIn(text, help_text)
 
     @override_settings(BACKGAMMON_DEBUG_TOOLS=True)
     def test_boolean_setting_falls_back_when_row_is_missing(self) -> None:
@@ -1298,7 +1387,9 @@ class GameRulesTests(TestCase):
 
         self.assertEqual(roll_dice_from_player_bag(game, self.white), [1, 1])
 
-    @override_settings(BACKGAMMON_DICE_MODE="player_bag")
+    @override_settings(
+        BACKGAMMON_DICE_MODE="player_bag", BACKGAMMON_DOUBLES_SELECTION_MODE="MIN"
+    )
     @patch("backgammon.services.roll_dice_from_player_bag", return_value=[3, 3])
     def test_create_roll_can_use_player_bag_dice_mode(self, mocked_roll) -> None:
         """Roll creation can use the balanced per-player dice mode."""
@@ -1331,14 +1422,15 @@ class GameRulesTests(TestCase):
                 with (
                     patch("backgammon.services.secrets.randbelow") as random_face,
                     patch("backgammon.services.roll_dice_from_player_bag") as bag,
-                    patch("backgammon.services.roll_dice") as independent,
                 ):
                     for face in range(1, 7):
                         for player in (self.white, self.black):
                             random_face.reset_mock(return_value=True)
                             random_face.return_value = face - 1
                             self.assertEqual(create_roll(game, player), [face, face])
-                            random_face.assert_called_once_with(6)
+                            self.assertEqual(
+                                random_face.call_args_list, [call(6), call(6)]
+                            )
                             game.refresh_from_db()
                             self.assertTrue(game.doubles_only)
                             self.assertEqual(game.dice, [face, face])
@@ -1347,7 +1439,6 @@ class GameRulesTests(TestCase):
                             switch_turn(game)
                             game.save()
                     bag.assert_not_called()
-                    independent.assert_not_called()
                 self.assertEqual(
                     game.moves.filter(action=GameMove.Action.ROLL).count(), 12
                 )
@@ -1359,7 +1450,9 @@ class GameRulesTests(TestCase):
                         payload["dice_statistics"][color]["total_points"], 84
                     )
 
-    @override_settings(BACKGAMMON_DICE_MODE="independent")
+    @override_settings(
+        BACKGAMMON_DICE_MODE="independent", BACKGAMMON_DOUBLES_SELECTION_MODE="MAX"
+    )
     @patch("backgammon.services.secrets.randbelow", side_effect=[0, 5])
     def test_regular_game_keeps_independent_dice(self, random_face) -> None:
         """Unchecked games still draw each die separately and can roll non-doubles."""
@@ -1367,6 +1460,97 @@ class GameRulesTests(TestCase):
         self.assertFalse(game.doubles_only)
         self.assertEqual(roll_dice_for_game(game, self.white), [1, 6])
         self.assertEqual(random_face.call_count, 2)
+
+    def test_doubles_selection_distributions_for_all_pairs_and_both_players(
+        self,
+    ) -> None:
+        """Exactly two fair candidates produce the specified distribution in each mode."""
+        game = Game(white_player=self.white, black_player=self.black, doubles_only=True)
+        distributions = {
+            "FIRST": [6, 6, 6, 6, 6, 6],
+            "MIN": [11, 9, 7, 5, 3, 1],
+            "MAX": [1, 3, 5, 7, 9, 11],
+        }
+        for mode, weights in distributions.items():
+            with (
+                self.subTest(mode=mode),
+                override_settings(
+                    BACKGAMMON_DICE_MODE="player_bag",
+                    BACKGAMMON_DOUBLES_SELECTION_MODE=mode,
+                ),
+                patch("backgammon.services.secrets.randbelow") as random_face,
+                patch("backgammon.services.roll_dice_from_player_bag") as bag,
+            ):
+                for player in (self.white, self.black):
+                    counts = Counter()
+                    for left in range(1, 7):
+                        for right in range(1, 7):
+                            random_face.reset_mock()
+                            random_face.side_effect = [left - 1, right - 1]
+                            dice = roll_dice_for_game(game, player)
+                            self.assertEqual(
+                                random_face.call_args_list, [call(6), call(6)]
+                            )
+                            expected = (
+                                left
+                                if mode == "FIRST"
+                                else (
+                                    min(left, right)
+                                    if mode == "MIN"
+                                    else max(left, right)
+                                )
+                            )
+                            self.assertEqual(dice, [expected, expected])
+                            counts[dice[0]] += 1
+                    self.assertEqual([counts[face] for face in range(1, 7)], weights)
+                bag.assert_not_called()
+
+    @patch("backgammon.services.roll_die", side_effect=[2, 5, 2, 5, 5, 2])
+    def test_selection_setting_changes_only_subsequent_rolls(self, random_die) -> None:
+        """A live setting change keeps rolled dice and history and affects the next roll."""
+        game = Game.objects.create(
+            white_player=self.white,
+            black_player=self.black,
+            current_player=self.white,
+            status=Game.Status.ACTIVE,
+            doubles_only=True,
+        )
+        setting = AppSetting.objects.get(
+            key=AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE
+        )
+        setting.value = "FIRST"
+        setting.is_enabled = True
+        setting.save()
+        self.assertEqual(create_roll(game, self.white), [2, 2])
+        history_before = list(game.moves.values())
+        setting.value = "MAX"
+        setting.save()
+        game.refresh_from_db()
+        self.assertEqual(game.dice, [2, 2])
+        self.assertEqual(game.remaining_moves, [2] * 4)
+        self.assertEqual(list(game.moves.values()), history_before)
+        with self.assertRaises(GameError):
+            create_roll(game, self.white)
+
+        switch_turn(game)
+        game.save()
+        self.assertEqual(create_roll(game, self.black), [5, 5])
+        self.assertEqual(game.remaining_moves, [5] * 4)
+        setting.value = "MIN"
+        setting.save()
+        switch_turn(game)
+        game.save()
+        self.assertEqual(create_roll(game, self.white), [2, 2])
+        self.assertEqual(game.remaining_moves, [2] * 4)
+        self.assertEqual(random_die.call_count, 6)
+        self.assertEqual(
+            list(game.moves.order_by("pk").values_list("dice", flat=True)),
+            [[2, 2], [5, 5], [2, 2]],
+        )
+        payload = serialize_game(game, self.white)
+        self.assertEqual(payload["double_rolls"], {"white": 2, "black": 1})
+        self.assertEqual(payload["dice_statistics"]["white"]["total_points"], 16)
+        self.assertEqual(payload["dice_statistics"]["black"]["total_points"], 20)
 
     def test_doubles_only_cannot_change_after_creation(self) -> None:
         """Both enabling and disabling a persisted game's mode are rejected."""
@@ -1403,7 +1587,7 @@ class GameRulesTests(TestCase):
         apply_move(game, self.white, 23, 1)
         game.refresh_from_db()
 
-        mocked_roll.assert_called_once_with()
+        self.assertEqual(mocked_roll.call_args_list, [call(), call()])
         self.assertEqual(game.status, Game.Status.FINISHED)
         self.assertEqual(game.victory_type, Game.VictoryType.MARS)
         winner_stats = PlayerStats.objects.get(user=self.white)
@@ -1760,6 +1944,37 @@ class GameLobbyTests(TestCase):
         )
         self.opponent = User.objects.create_user(username="opponent", password="pass")
         self.client.force_login(self.viewer)
+
+    def test_setup_modal_shows_effective_doubles_selection(self) -> None:
+        """The checkbox and badge explain the resolved admin/environment setting."""
+        setting = AppSetting.objects.get(
+            key=AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE
+        )
+        for value, enabled, environment, label in [
+            ("FIRST", True, "MAX", "выбираем первый"),
+            ("MIN", True, "FIRST", "выбираем минимальный"),
+            ("MAX", True, "FIRST", "выбираем максимальный"),
+            ("MIN", False, "MAX", "выбираем максимальный"),
+            ("invalid", True, "MIN", "выбираем минимальный"),
+            ("invalid", True, "invalid", "выбираем первый"),
+        ]:
+            with self.subTest(value=value, enabled=enabled, environment=environment):
+                setting.value = value
+                setting.is_enabled = enabled
+                setting.save()
+                with override_settings(BACKGAMMON_DOUBLES_SELECTION_MODE=environment):
+                    response = self.client.get(reverse("backgammon:game_list"))
+                self.assertContains(
+                    response,
+                    '<label class="form-check-label" for="setup-doubles-only">Только дубликаты</label>',
+                    html=True,
+                )
+                self.assertContains(
+                    response,
+                    f'<span id="setup-doubles-mode" class="badge text-bg-secondary">{label}</span>',
+                    count=1,
+                    html=True,
+                )
 
     def test_lobby_renders_game_setup_modal_with_user_defaults(self) -> None:
         """The new-game modal is prefilled from user and runtime settings."""
