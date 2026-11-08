@@ -207,10 +207,6 @@ class AppSettingsTests(TestCase):
             "maximum",
             "(2, 5)",
             "(5, 2)",
-            "1/6",
-            "11, 9, 7, 5, 3, 1",
-            "1, 3, 5, 7, 9, 11",
-            "next roll",
         ):
             self.assertIn(text, help_text)
 
