@@ -1,7 +1,7 @@
 import json
 from collections import Counter
 from importlib import import_module
-from datetime import datetime, timezone as datetime_timezone
+from datetime import date, datetime, timedelta, timezone as datetime_timezone
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -1941,6 +1941,107 @@ class GameLobbyTests(TestCase):
         self.opponent = User.objects.create_user(username="opponent", password="pass")
         self.client.force_login(self.viewer)
 
+    def test_dashboard_uses_finished_history_and_moscow_months(self) -> None:
+        """The dashboard includes archived results and handles legacy timestamps."""
+        now = datetime(2026, 1, 15, tzinfo=datetime_timezone.utc)
+        old_finish = datetime(2024, 12, 15, tzinfo=datetime_timezone.utc)
+        Game.objects.bulk_create(
+            [
+                Game(
+                    white_player=self.viewer,
+                    black_player=self.opponent,
+                    winner=self.viewer,
+                    status=Game.Status.FINISHED,
+                    started_at=old_finish - timedelta(minutes=10),
+                    finished_at=old_finish,
+                )
+                for _ in range(21)
+            ]
+        )
+        # Both games end on December 31 in UTC but in different Moscow months.
+        december_finish = datetime(2025, 12, 31, 20, 59, tzinfo=datetime_timezone.utc)
+        january_finish = december_finish + timedelta(minutes=1)
+        legacy = Game.objects.create(
+            white_player=self.opponent,
+            black_player=self.viewer,
+            winner=self.opponent,
+            status=Game.Status.FINISHED,
+            finished_at=december_finish,
+        )
+        Game.objects.filter(pk=legacy.pk).update(
+            created_at=december_finish - timedelta(minutes=30)
+        )
+        Game.objects.create(
+            white_player=self.opponent,
+            black_player=self.viewer,
+            winner=self.viewer,
+            status=Game.Status.FINISHED,
+            started_at=january_finish - timedelta(hours=1),
+            finished_at=january_finish,
+        )
+        Game.objects.create(
+            white_player=self.viewer,
+            status=Game.Status.FINISHED,
+            finished_at=january_finish,
+            started_at=january_finish + timedelta(minutes=1),
+        )
+        Game.objects.create(white_player=self.viewer, status=Game.Status.FINISHED)
+        Game.objects.create(
+            white_player=self.viewer,
+            status=Game.Status.ACTIVE,
+            finished_at=january_finish,
+        )
+        Game.objects.create(
+            white_player=self.opponent,
+            planned_opponent=self.viewer,
+            winner=self.opponent,
+            status=Game.Status.FINISHED,
+            finished_at=january_finish,
+        )
+        PlayerStats.objects.create(user=self.viewer, wins=100)
+
+        with patch("backgammon.views.timezone.now", return_value=now):
+            response = self.client.get(reverse("backgammon:game_list"))
+
+        stats = response.context["stats"]
+        self.assertEqual(len(response.context["my_games"]), 12)
+        self.assertEqual((stats["wins"], stats["losses"]), (22, 1))
+        self.assertEqual((stats["win_percent"], stats["loss_percent"]), (96, 4))
+        self.assertEqual(stats["total_duration"], "5 часов")
+        self.assertEqual(stats["average_duration"], "13 мин")
+        self.assertEqual(
+            [(month["date"], month["count"]) for month in stats["months"]],
+            [(date(2025, month, 1), 0) for month in range(2, 12)]
+            + [(date(2025, 12, 1), 1), (date(2026, 1, 1), 2)],
+        )
+        for title in (
+            "Победы и поражения",
+            "Игры по месяцам",
+            "Всего в игре",
+            "Средняя длительность",
+        ):
+            self.assertContains(response, title)
+
+    def test_dashboard_empty_and_single_result_states(self) -> None:
+        """A new player can read the dashboard before and after the first result."""
+        url = reverse("backgammon:game_list")
+        empty = self.client.get(url)
+        self.assertContains(empty, "Пока нет результатов")
+        self.assertContains(empty, "Нет данных")
+        self.assertEqual(empty.context["stats"]["total_duration"], "0 мин")
+
+        Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            winner=self.opponent,
+            status=Game.Status.FINISHED,
+        )
+        loss = self.client.get(url).context["stats"]
+        self.assertEqual((loss["win_percent"], loss["loss_percent"]), (0, 100))
+        self.client.force_login(self.opponent)
+        win = self.client.get(url).context["stats"]
+        self.assertEqual((win["win_percent"], win["loss_percent"]), (100, 0))
+
     def test_setup_modal_shows_effective_doubles_selection(self) -> None:
         """The checkbox and badge explain the resolved admin/environment setting."""
         setting = AppSetting.objects.get(
@@ -1996,21 +2097,17 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, 'name="opponent"')
         self.assertContains(response, f'value="{self.opponent.pk}" selected')
 
-    def test_lobby_total_counts_all_games_with_viewer_as_player_or_opponent(
-        self,
-    ) -> None:
-        """The lobby total includes active, waiting, and planned games for the viewer."""
-        other_user = get_user_model().objects.create_user(
-            username="other-user", password="pass"
-        )
-        Game.objects.create(white_player=self.viewer, black_player=self.opponent)
-        Game.objects.create(black_player=self.viewer, planned_opponent=self.opponent)
-        Game.objects.create(white_player=self.opponent, planned_opponent=self.viewer)
-        Game.objects.create(white_player=self.opponent, black_player=other_user)
+    def test_lobby_lists_only_the_twelve_most_recent_personal_games(self) -> None:
+        """Older games stay out of the lobby, and an empty waiting section is hidden."""
+        games = [
+            Game.objects.create(white_player=self.viewer, black_player=self.opponent)
+            for _ in range(14)
+        ]
 
         response = self.client.get(reverse("backgammon:game_list"))
 
-        self.assertContains(response, "Игр: 3")
+        self.assertEqual(response.context["my_games"], list(reversed(games[-12:])))
+        self.assertNotContains(response, "Ожидают игрока")
 
     def test_create_game_uses_selected_color_and_checker_count(self) -> None:
         """Posting setup choices creates a waiting game with the selected setup."""
@@ -2174,6 +2271,7 @@ class GameLobbyTests(TestCase):
 
         self.client.force_login(self.opponent)
         response = self.client.get(reverse("backgammon:game_list"))
+        self.assertContains(response, "Ожидают игрока")
         self.assertContains(response, f'href="/games/{game.pk}/"')
         self.assertContains(response, "#1")
 

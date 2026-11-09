@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import date, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -30,7 +30,6 @@ from .models import (
     BackgammonPlayerPreference,
     Game,
     GameMove,
-    PlayerStats,
     initial_board_for_count,
 )
 from games.settings import DEFAULT_CHECKER_COUNT
@@ -56,6 +55,20 @@ from .services import (
 )
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+MONTH_LABELS = (
+    "янв",
+    "фев",
+    "мар",
+    "апр",
+    "май",
+    "июн",
+    "июл",
+    "авг",
+    "сен",
+    "окт",
+    "ноя",
+    "дек",
+)
 
 
 def moscow_datetime_label(value: Any) -> str:
@@ -82,6 +95,63 @@ def game_duration_label(duration: timedelta) -> str:
     if minutes or not parts:
         parts.append(f"{minutes} мин")
     return " ".join(parts)
+
+
+def lobby_statistics(viewer_id: int) -> dict[str, Any]:
+    """Summarize the viewer's full finished game history for the lobby."""
+    today = timezone.localdate(timezone=MOSCOW_TZ)
+    current_month = today.year * 12 + today.month - 1
+    month_counts = dict.fromkeys(range(current_month - 11, current_month + 1), 0)
+    wins = losses = duration_count = 0
+    total_duration = timedelta()
+    games = (
+        Game.objects.filter(status=Game.Status.FINISHED)
+        .filter(Q(white_player_id=viewer_id) | Q(black_player_id=viewer_id))
+        .order_by()
+        .values_list("winner_id", "started_at", "created_at", "finished_at")
+    )
+    for winner_id, started_at, created_at, finished_at in games.iterator():
+        if winner_id == viewer_id:
+            wins += 1
+        elif winner_id is not None:
+            losses += 1
+        if finished_at is None:
+            continue
+        finished_date = timezone.localdate(finished_at, MOSCOW_TZ)
+        month = finished_date.year * 12 + finished_date.month - 1
+        if month in month_counts:
+            month_counts[month] += 1
+        duration = finished_at - (started_at or created_at)
+        if duration >= timedelta():
+            total_duration += duration
+            duration_count += 1
+
+    max_month_count = max(month_counts.values())
+    months = [
+        {
+            "date": date(month // 12, month % 12 + 1, 1),
+            "label": MONTH_LABELS[month % 12],
+            "count": count,
+            "height": round(100 * count / max_month_count) if max_month_count else 0,
+        }
+        for month, count in month_counts.items()
+    ]
+    results_count = wins + losses
+    win_percent = round(100 * wins / results_count) if results_count else 0
+    return {
+        "wins": wins,
+        "losses": losses,
+        "results_count": results_count,
+        "win_percent": win_percent,
+        "loss_percent": 100 - win_percent if results_count else 0,
+        "months": months,
+        "total_duration": game_duration_label(total_duration),
+        "average_duration": (
+            game_duration_label(total_duration / duration_count)
+            if duration_count
+            else None
+        ),
+    }
 
 
 def user_display_name(user: Any | None) -> str:
@@ -158,22 +228,14 @@ def game_list(request: HttpRequest) -> HttpResponse:
     games = Game.objects.select_related(
         "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
-    my_games_count = games.filter(
-        Q(white_player=request.user)
-        | Q(black_player=request.user)
-        | Q(planned_opponent=request.user)
-    ).count()
+    player_games = games.filter(
+        Q(white_player=request.user) | Q(black_player=request.user)
+    )
     my_games = [
         decorate_lobby_game(game, request.user)
-        for game in games.filter(
-            Q(white_player=request.user) | Q(black_player=request.user)
-        )[:20]
+        for game in player_games.order_by("-created_at", "-pk")[:12]
     ]
-    finished_games_count = (
-        games.filter(status=Game.Status.FINISHED)
-        .filter(Q(white_player=request.user) | Q(black_player=request.user))
-        .count()
-    )
+    finished_games_count = player_games.filter(status=Game.Status.FINISHED).count()
     open_games_query = (
         games.filter(status=Game.Status.WAITING)
         .filter(Q(planned_opponent=request.user) | Q(planned_opponent__isnull=True))
@@ -182,17 +244,15 @@ def game_list(request: HttpRequest) -> HttpResponse:
     open_games = [
         decorate_lobby_game(game, request.user) for game in open_games_query[:20]
     ]
-    stats = PlayerStats.objects.filter(user=request.user).first()
     checker_count_presets = backgammon_checker_count_presets()
     return render(
         request,
         "backgammon/game_list.html",
         {
             "my_games": my_games,
-            "my_games_count": my_games_count,
             "finished_games_count": finished_games_count,
             "open_games": open_games,
-            "stats": stats,
+            "stats": lobby_statistics(request.user.pk),
             "default_checker_color": default_checker_color_for(request.user),
             "default_checker_count": DEFAULT_CHECKER_COUNT,
             "default_opponent_id": default_opponent_for(request.user),

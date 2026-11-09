@@ -1,0 +1,67 @@
+<section aria-labelledby="lobby-statistics-title">
+    <h2 class="visually-hidden" id="lobby-statistics-title">Моя статистика</h2>
+    <div class="row g-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h6">Победы и поражения</h3>
+                    <div class="d-flex flex-wrap align-items-center gap-3">
+                        <div class="lobby-results-chart flex-shrink-0{% if stats.results_count %} lobby-results-chart-filled{% endif %}"
+                             style="--lobby-win-share: {{ stats.win_percent }}%;" aria-hidden="true"></div>
+                        <ul class="list-unstyled small mb-0 flex-grow-1">
+                            <li class="d-flex justify-content-between gap-2">
+                                <span><span class="text-success" aria-hidden="true">●</span> Победы</span>
+                                <strong>{{ stats.wins }} · {{ stats.win_percent }}%</strong>
+                            </li>
+                            <li class="d-flex justify-content-between gap-2">
+                                <span><span class="text-danger" aria-hidden="true">●</span> Поражения</span>
+                                <strong>{{ stats.losses }} · {{ stats.loss_percent }}%</strong>
+                            </li>
+                        </ul>
+                    </div>
+                    {% if not stats.results_count %}
+                        <p class="text-secondary small mt-2 mb-0">Пока нет результатов</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h3 class="h6 mb-1">Игры по месяцам</h3>
+                    <p class="text-secondary small mb-2">Последние 12 месяцев</p>
+                    <ul class="lobby-month-chart list-unstyled mb-0">
+                        {% for month in stats.months %}
+                            <li class="lobby-month">
+                                <span class="lobby-month-bar" style="--lobby-month-height: {{ month.height }}%;">
+                                    <span class="lobby-month-count">{{ month.count }}</span>
+                                </span>
+                                <time datetime="{{ month.date|date:'Y-m' }}">{{ month.label }}<br>{{ month.date|date:'y' }}</time>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h3 class="h6">Всего в игре</h3>
+                    <p class="fs-5 fw-semibold mb-0">{{ stats.total_duration }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h3 class="h6 text-break">Средняя длительность</h3>
+                    {% if stats.average_duration %}
+                        <p class="fs-5 fw-semibold mb-0">{{ stats.average_duration }}</p>
+                    {% else %}
+                        <p class="text-secondary small mb-0">Нет данных</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
