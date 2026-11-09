@@ -3,17 +3,7 @@
 {% block title %}Игры · Длинные нарды{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-    <div>
-        <h1 class="h3 mb-1">Игры</h1>
-        <div class="text-secondary small">
-            Игр: {{ my_games_count }}{% if stats %} · Побед: {{ stats.wins }} · Поражений: {{ stats.losses }} · Марсов: {{ stats.mars_wins }}{% endif %}
-        </div>
-    </div>
-    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#gameSetupModal">
-        Новая игра
-    </button>
-</div>
+<h1 class="visually-hidden">Игры</h1>
 
 <div class="modal fade" id="gameSetupModal" tabindex="-1" aria-labelledby="gameSetupModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -72,13 +62,8 @@
 </div>
 
 <div class="row g-4">
-    <section class="col-lg-7">
-        <div class="d-flex justify-content-between align-items-center mb-3 gap-2">
-            <h2 class="h5 mb-0">Мои игры</h2>
-            {% if finished_games_count %}
-                <a class="btn btn-outline-secondary btn-sm" href="{% url 'backgammon:finished_game_archive' %}">Архив · {{ finished_games_count }}</a>
-            {% endif %}
-        </div>
+    <section class="col-lg-7" aria-labelledby="my-games-title">
+        <h2 class="visually-hidden" id="my-games-title">Мои игры</h2>
         <div class="list-group">
             {% for game in my_games %}
                 <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
@@ -109,24 +94,35 @@
         </div>
     </section>
 
-    <section class="col-lg-5">
-        <h2 class="h5 mb-3">Ожидают игрока</h2>
-        <div class="list-group">
-            {% for game in open_games %}
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
-                    <span class="d-flex flex-column gap-1">
-                        <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.waiting_player_label }}</span>
-                        <span class="text-secondary small">
-                            {{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек
-                            {% if game.doubles_only %} · <span class="badge text-bg-secondary">дубли</span>{% endif %}
-                        </span>
-                    </span>
-                    <span class="badge text-bg-primary flex-shrink-0">Войти</span>
-                </a>
-            {% empty %}
-                <div class="text-secondary">Открытых игр нет.</div>
-            {% endfor %}
+    <div class="col-lg-5 d-flex flex-column">
+        {% if open_games %}
+            <section class="mb-4">
+                <h2 class="h5 mb-3">Ожидают игрока</h2>
+                <div class="list-group">
+                    {% for game in open_games %}
+                        <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
+                            <span class="d-flex flex-column gap-1">
+                                <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.waiting_player_label }}</span>
+                                <span class="text-secondary small">
+                                    {{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек
+                                    {% if game.doubles_only %} · <span class="badge text-bg-secondary">дубли</span>{% endif %}
+                                </span>
+                            </span>
+                            <span class="badge text-bg-primary flex-shrink-0">Войти</span>
+                        </a>
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
+        {% include 'backgammon/lobby_statistics.html' %}
+        <div class="mt-auto pt-3 d-flex flex-wrap justify-content-end gap-2">
+            {% if finished_games_count %}
+                <a class="btn btn-outline-secondary" href="{% url 'backgammon:finished_game_archive' %}">Архив · {{ finished_games_count }}</a>
+            {% endif %}
+            <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#gameSetupModal">
+                Новая игра
+            </button>
         </div>
-    </section>
+    </div>
 </div>
 {% endblock %}
