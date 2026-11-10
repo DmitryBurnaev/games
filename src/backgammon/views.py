@@ -55,6 +55,8 @@ from .services import (
 )
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+MIN_AVERAGE_GAME_DURATION = timedelta(minutes=1)
+MAX_AVERAGE_GAME_DURATION = timedelta(hours=4)
 MONTH_LABELS = (
     "янв",
     "фев",
@@ -104,6 +106,7 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
     month_counts = dict.fromkeys(range(current_month - 11, current_month + 1), 0)
     wins = losses = duration_count = 0
     total_duration = timedelta()
+    average_duration_total = timedelta()
     games = (
         Game.objects.filter(status=Game.Status.FINISHED)
         .filter(Q(white_player_id=viewer_id) | Q(black_player_id=viewer_id))
@@ -125,6 +128,8 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
         duration = finished_at - (started_at or created_at)
         if duration >= timedelta():
             total_duration += duration
+        if MIN_AVERAGE_GAME_DURATION <= duration <= MAX_AVERAGE_GAME_DURATION:
+            average_duration_total += duration
             duration_count += 1
 
     max_month_count = max(month_counts.values())
@@ -147,7 +152,7 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
         "months": months,
         "total_duration": game_duration_label(total_duration),
         "average_duration": (
-            game_duration_label(total_duration / duration_count)
+            game_duration_label(average_duration_total / duration_count)
             if duration_count
             else None
         ),

@@ -2042,6 +2042,50 @@ class GameLobbyTests(TestCase):
         win = self.client.get(url).context["stats"]
         self.assertEqual(win["win_percent"], 100)
 
+    def test_dashboard_filters_duration_outliers_only_from_average(self) -> None:
+        """Ignore short and long outliers when averaging, and retain the total."""
+        finished_at = datetime(2026, 1, 15, tzinfo=datetime_timezone.utc)
+        for duration in (
+            timedelta(),
+            timedelta(seconds=59),
+            timedelta(minutes=1),
+            timedelta(minutes=20),
+            timedelta(minutes=30),
+            timedelta(hours=4),
+            timedelta(hours=4, seconds=1),
+            timedelta(hours=22),
+            timedelta(hours=23),
+        ):
+            Game.objects.create(
+                white_player=self.viewer,
+                black_player=self.opponent,
+                winner=self.viewer,
+                status=Game.Status.FINISHED,
+                started_at=finished_at - duration,
+                finished_at=finished_at,
+            )
+
+        response = self.client.get(reverse("backgammon:game_list"))
+        stats = response.context["stats"]
+        self.assertEqual(stats["average_duration"], "1 час 12 мин")
+        self.assertEqual(stats["total_duration"], "2 д 5 часов 52 мин")
+        self.assertEqual(stats["wins"], 9)
+
+    def test_dashboard_has_no_average_when_all_durations_are_outliers(self) -> None:
+        """A finished game with no eligible duration cannot produce an average."""
+        finished_at = datetime(2026, 1, 15, tzinfo=datetime_timezone.utc)
+        Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            status=Game.Status.FINISHED,
+            started_at=finished_at,
+            finished_at=finished_at,
+        )
+
+        response = self.client.get(reverse("backgammon:game_list"))
+        self.assertIsNone(response.context["stats"]["average_duration"])
+        self.assertContains(response, "Нет данных")
+
     def test_setup_modal_shows_effective_doubles_selection(self) -> None:
         """The checkbox and badge explain the resolved admin/environment setting."""
         setting = AppSetting.objects.get(
