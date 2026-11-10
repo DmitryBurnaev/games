@@ -62,43 +62,19 @@
 </div>
 
 <div class="row g-4">
-    <section class="col-lg-7" aria-labelledby="my-games-title">
-        <h2 class="visually-hidden" id="my-games-title">Мои игры</h2>
-        <div class="list-group">
-            {% for game in my_games %}
-                <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
-                    <span class="d-flex flex-column gap-1">
-                        <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.white_player_label }} ⇆ {{ game.black_player_label }}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
-                        <span class="text-secondary small">
-                            {{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек
-                            {% if game.doubles_only %} · <span class="badge text-bg-secondary">дубли</span>{% endif %}
-                        </span>
-                    </span>
-                    {% if game.winner %}
-                        <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">
-                            {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}
-                        </span>
-                    {% elif game.status == "active" %}
-                        <span class="badge text-bg-secondary flex-shrink-0">игра в процессе ...</span>
-                    {% elif game.status == "waiting" %}
-                        <span class="badge text-bg-secondary flex-shrink-0">ожидание соперника</span>
-                    {% elif game.status == "finished" %}
-                        <span class="badge text-bg-secondary flex-shrink-0">игра завершена</span>
-                    {% else %}
-                        <span class="badge text-bg-secondary flex-shrink-0">статус неизвестен</span>
-                    {% endif %}
-                </a>
-            {% empty %}
-                <div class="text-secondary">Пока нет игр.</div>
-            {% endfor %}
-        </div>
-    </section>
-
     <div class="col-lg-5 d-flex flex-column">
+        <div class="mb-3 d-flex flex-wrap justify-content-end gap-2">
+            {% if finished_games_count %}
+                <a class="btn btn-outline-secondary" href="{% url 'backgammon:finished_game_archive' %}">Архив · {{ finished_games_count }}</a>
+            {% endif %}
+            <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#gameSetupModal">
+                Новая игра
+            </button>
+        </div>
         {% if open_games %}
-            <section class="mb-4">
-                <h2 class="h5 mb-3">Ожидают игрока</h2>
-                <div class="list-group">
+            <section class="card mb-3" aria-labelledby="open-games-title">
+                <h2 class="card-header bg-transparent h6 mb-0" id="open-games-title">Ожидают игрока</h2>
+                <div class="list-group list-group-flush">
                     {% for game in open_games %}
                         <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
                             <span class="d-flex flex-column gap-1">
@@ -115,14 +91,40 @@
             </section>
         {% endif %}
         {% include 'backgammon/lobby_statistics.html' %}
-        <div class="mt-auto pt-3 d-flex flex-wrap justify-content-end gap-2">
-            {% if finished_games_count %}
-                <a class="btn btn-outline-secondary" href="{% url 'backgammon:finished_game_archive' %}">Архив · {{ finished_games_count }}</a>
-            {% endif %}
-            <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#gameSetupModal">
-                Новая игра
-            </button>
-        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <section aria-labelledby="my-games-title">
+            <h2 class="visually-hidden" id="my-games-title">Мои игры</h2>
+            <div class="list-group">
+                {% for game in my_games %}
+                    <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-3" href="{% url 'backgammon:game_detail' game.pk %}">
+                        <span class="d-flex flex-column gap-1">
+                            <span>{% if game.party_number %}#{{ game.party_number }}{% else %}ID: {{ game.pk }}{% endif %} · {{ game.white_player_label }} ⇆ {{ game.black_player_label }}{% if game.victory_type == "mars" %} 🌚{% endif %}</span>
+                            <span class="text-secondary small">
+                                {{ game.started_at_label }} · ⌛ {{ game.duration_label }} · 🎲 {{ game.checker_count }} фишек
+                                {% if game.doubles_only %} · <span class="badge text-bg-secondary">дубли</span>{% endif %}
+                            </span>
+                        </span>
+                        {% if game.winner %}
+                            <span class="badge {% if game.winner_is_viewer %}text-bg-success{% else %}text-bg-danger{% endif %} flex-shrink-0">
+                                {% if game.winner_is_viewer %}победа{% else %}поражение{% endif %}
+                            </span>
+                        {% elif game.status == "active" %}
+                            <span class="badge text-bg-secondary flex-shrink-0">игра в процессе ...</span>
+                        {% elif game.status == "waiting" %}
+                            <span class="badge text-bg-secondary flex-shrink-0">ожидание соперника</span>
+                        {% elif game.status == "finished" %}
+                            <span class="badge text-bg-secondary flex-shrink-0">игра завершена</span>
+                        {% else %}
+                            <span class="badge text-bg-secondary flex-shrink-0">статус неизвестен</span>
+                        {% endif %}
+                    </a>
+                {% empty %}
+                    <div class="text-secondary">Пока нет игр.</div>
+                {% endfor %}
+            </div>
+        </section>
     </div>
 </div>
 {% endblock %}

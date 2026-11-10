@@ -912,6 +912,27 @@ body {
         width: 36px;
     }
 }
+.lobby-statistics-overview .card-body {
+    padding-block: 0.8125rem;
+}
+
+.lobby-statistics-overview .lobby-statistics-results .card-body {
+    padding-block: 1.125rem;
+}
+
+@supports (height: calc-size(auto, size * 1.1)) {
+    @media (min-width: 576px) {
+        .lobby-statistics-overview {
+            height: calc-size(auto, (size - var(--bs-gutter-y)) * 1.1 + var(--bs-gutter-y));
+        }
+
+        .lobby-statistics-overview .card-body,
+        .lobby-statistics-overview .lobby-statistics-results .card-body {
+            padding-block: 0.5rem;
+        }
+    }
+}
+
 .lobby-results-chart {
     width: 5.5rem;
     aspect-ratio: 1;
@@ -921,6 +942,14 @@ body {
     place-items: center;
 }
 
+.lobby-results-chart::after {
+    content: "";
+    width: 53.2%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: var(--bs-card-bg);
+}
+
 .lobby-results-chart-filled {
     background: conic-gradient(
         var(--bs-success) var(--lobby-win-share),
@@ -928,51 +957,48 @@ body {
     );
 }
 
-.lobby-results-chart::after {
-    content: "";
-    width: 68%;
-    aspect-ratio: 1;
-    border-radius: 50%;
-    background: var(--bs-card-bg);
-}
-
-.lobby-month-chart {
+.lobby-bar-chart {
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 0.25rem;
 }
 
-.lobby-month {
+.lobby-month-chart {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.lobby-bar-bin {
+    display: flex;
+    flex-direction: column;
     text-align: center;
     font-size: 0.6875rem;
     line-height: 1.15;
 }
 
-.lobby-month-bar {
+.lobby-bar {
     position: relative;
-    display: block;
-    height: 5.5rem;
+    flex: 1 0 auto;
+    height: 7rem;
     margin: 1rem 0 0.25rem;
     border-bottom: 1px solid var(--bs-border-color);
 }
 
-.lobby-month-bar::before {
+.lobby-bar::before {
     content: "";
     position: absolute;
     inset: auto 14% 0;
-    height: var(--lobby-month-height);
+    height: var(--lobby-bar-height);
     background: var(--bs-primary);
     border-radius: 0.25rem 0.25rem 0 0;
 }
 
-.lobby-month-count {
+.lobby-bar-count {
     position: absolute;
-    inset: auto 0 var(--lobby-month-height);
+    inset: auto 0 var(--lobby-bar-height);
     padding-bottom: 0.125rem;
     font-weight: 600;
 }
 
-.lobby-month time {
+.lobby-bar-label {
     color: var(--bs-secondary-color);
 }
 

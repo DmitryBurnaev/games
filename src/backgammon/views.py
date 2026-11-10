@@ -108,9 +108,10 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
         Game.objects.filter(status=Game.Status.FINISHED)
         .filter(Q(white_player_id=viewer_id) | Q(black_player_id=viewer_id))
         .order_by()
-        .values_list("winner_id", "started_at", "created_at", "finished_at")
     )
-    for winner_id, started_at, created_at, finished_at in games.iterator():
+    for winner_id, started_at, created_at, finished_at in games.values_list(
+        "winner_id", "started_at", "created_at", "finished_at"
+    ).iterator():
         if winner_id == viewer_id:
             wins += 1
         elif winner_id is not None:
@@ -143,7 +144,6 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
         "losses": losses,
         "results_count": results_count,
         "win_percent": win_percent,
-        "loss_percent": 100 - win_percent if results_count else 0,
         "months": months,
         "total_duration": game_duration_label(total_duration),
         "average_duration": (
@@ -233,7 +233,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
     )
     my_games = [
         decorate_lobby_game(game, request.user)
-        for game in player_games.order_by("-created_at", "-pk")[:12]
+        for game in player_games.order_by("-created_at", "-pk")[:11]
     ]
     finished_games_count = player_games.filter(status=Game.Status.FINISHED).count()
     open_games_query = (
