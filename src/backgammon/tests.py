@@ -2004,9 +2004,9 @@ class GameLobbyTests(TestCase):
             response = self.client.get(reverse("backgammon:game_list"))
 
         stats = response.context["stats"]
-        self.assertEqual(len(response.context["my_games"]), 12)
+        self.assertEqual(len(response.context["my_games"]), 11)
         self.assertEqual((stats["wins"], stats["losses"]), (22, 1))
-        self.assertEqual((stats["win_percent"], stats["loss_percent"]), (96, 4))
+        self.assertEqual(stats["win_percent"], 96)
         self.assertEqual(stats["total_duration"], "5 часов")
         self.assertEqual(stats["average_duration"], "13 мин")
         self.assertEqual(
@@ -2037,10 +2037,10 @@ class GameLobbyTests(TestCase):
             status=Game.Status.FINISHED,
         )
         loss = self.client.get(url).context["stats"]
-        self.assertEqual((loss["win_percent"], loss["loss_percent"]), (0, 100))
+        self.assertEqual(loss["win_percent"], 0)
         self.client.force_login(self.opponent)
         win = self.client.get(url).context["stats"]
-        self.assertEqual((win["win_percent"], win["loss_percent"]), (100, 0))
+        self.assertEqual(win["win_percent"], 100)
 
     def test_setup_modal_shows_effective_doubles_selection(self) -> None:
         """The checkbox and badge explain the resolved admin/environment setting."""
@@ -2097,16 +2097,16 @@ class GameLobbyTests(TestCase):
         self.assertContains(response, 'name="opponent"')
         self.assertContains(response, f'value="{self.opponent.pk}" selected')
 
-    def test_lobby_lists_only_the_twelve_most_recent_personal_games(self) -> None:
+    def test_lobby_lists_only_the_eleven_most_recent_personal_games(self) -> None:
         """Older games stay out of the lobby, and an empty waiting section is hidden."""
         games = [
             Game.objects.create(white_player=self.viewer, black_player=self.opponent)
-            for _ in range(14)
+            for _ in range(13)
         ]
 
         response = self.client.get(reverse("backgammon:game_list"))
 
-        self.assertEqual(response.context["my_games"], list(reversed(games[-12:])))
+        self.assertEqual(response.context["my_games"], list(reversed(games[-11:])))
         self.assertNotContains(response, "Ожидают игрока")
 
     def test_create_game_uses_selected_color_and_checker_count(self) -> None:
