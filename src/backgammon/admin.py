@@ -1,5 +1,10 @@
+from datetime import timedelta
+
 from django import forms
 from django.contrib import admin
+from django.db.models import Case, DurationField, F, When
+from django.db.models.functions import Coalesce
+from django.utils.duration import duration_string
 from django.utils.safestring import mark_safe
 
 from .app_settings import (
@@ -147,9 +152,17 @@ class GameAdmin(admin.ModelAdmin):
         "winner",
         "victory_type",
         "started_at",
+        "game_duration",
+        "exclude_from_statistics",
         "created_at",
     )
-    list_filter = ("status", "victory_type", "started_at", "created_at")
+    list_filter = (
+        "status",
+        "exclude_from_statistics",
+        "victory_type",
+        "started_at",
+        "created_at",
+    )
     search_fields = (
         "white_player__username",
         "black_player__username",
@@ -161,7 +174,33 @@ class GameAdmin(admin.ModelAdmin):
         "updated_at",
         "started_at",
         "finished_at",
+        "game_duration",
     )
+
+    def get_queryset(self, request):
+        return (
+            super()
+            .get_queryset(request)
+            .annotate(
+                measured_duration=Case(
+                    When(
+                        status=Game.Status.FINISHED,
+                        then=F("finished_at") - Coalesce("started_at", "created_at"),
+                    ),
+                    output_field=DurationField(),
+                ),
+            )
+        )
+
+    @admin.display(description="Длительность", ordering="measured_duration")
+    def game_duration(self, game: Game) -> str | None:
+        duration = getattr(game, "measured_duration", None)
+        if duration is None:
+            return None
+        sign = "−" if duration < timedelta() else ""
+        return sign + duration_string(
+            timedelta(seconds=int(abs(duration).total_seconds()))
+        )
 
 
 @admin.register(BackgammonPlayerPreference)
