@@ -151,6 +151,11 @@ class Game(models.Model):
     turn_number = models.PositiveIntegerField(default=1)
     started_at = models.DateTimeField(blank=True, null=True)
     finished_at = models.DateTimeField(blank=True, null=True)
+    exclude_from_statistics = models.BooleanField(
+        "Не учитывать в статистике",
+        default=False,
+        help_text="Исключает партию из общего игрового времени и средней длительности.",
+    )
     finished_dice_statistics = models.JSONField(blank=True, null=True)
     finished_skipped_statistics = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

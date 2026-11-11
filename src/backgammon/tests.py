@@ -2042,19 +2042,13 @@ class GameLobbyTests(TestCase):
         win = self.client.get(url).context["stats"]
         self.assertEqual(win["win_percent"], 100)
 
-    def test_dashboard_filters_duration_outliers_only_from_average(self) -> None:
-        """Ignore short and long outliers when averaging, and retain the total."""
+    def test_dashboard_includes_unmarked_short_and_long_games(self) -> None:
+        """Zero-length and long games contribute to the average unless marked."""
         finished_at = datetime(2026, 1, 15, tzinfo=datetime_timezone.utc)
         for duration in (
             timedelta(),
-            timedelta(seconds=59),
-            timedelta(minutes=1),
-            timedelta(minutes=20),
-            timedelta(minutes=30),
-            timedelta(hours=4),
-            timedelta(hours=4, seconds=1),
+            timedelta(minutes=25),
             timedelta(hours=22),
-            timedelta(hours=23),
         ):
             Game.objects.create(
                 white_player=self.viewer,
@@ -2067,24 +2061,85 @@ class GameLobbyTests(TestCase):
 
         response = self.client.get(reverse("backgammon:game_list"))
         stats = response.context["stats"]
-        self.assertEqual(stats["average_duration"], "1 час 12 мин")
-        self.assertEqual(stats["total_duration"], "2 д 5 часов 52 мин")
-        self.assertEqual(stats["wins"], 9)
+        self.assertEqual(stats["average_duration"], "7 часов 28 мин")
+        self.assertEqual(stats["total_duration"], "22 часов 25 мин")
 
-    def test_dashboard_has_no_average_when_all_durations_are_outliers(self) -> None:
-        """A finished game with no eligible duration cannot produce an average."""
+    def test_dashboard_has_no_average_when_all_games_are_marked(self) -> None:
+        """Excluded games alone contribute no time and cannot produce an average."""
         finished_at = datetime(2026, 1, 15, tzinfo=datetime_timezone.utc)
         Game.objects.create(
             white_player=self.viewer,
             black_player=self.opponent,
             status=Game.Status.FINISHED,
-            started_at=finished_at,
+            started_at=finished_at - timedelta(minutes=25),
             finished_at=finished_at,
+            exclude_from_statistics=True,
         )
 
         response = self.client.get(reverse("backgammon:game_list"))
         self.assertIsNone(response.context["stats"]["average_duration"])
+        self.assertEqual(response.context["stats"]["total_duration"], "0 мин")
         self.assertContains(response, "Нет данных")
+
+    def test_admin_can_find_and_exclude_a_game_from_lobby_durations(self) -> None:
+        """Sort by duration, edit the flag, and verify both players' lobby totals."""
+        finished_at = datetime(2026, 1, 15, tzinfo=datetime_timezone.utc)
+        normal = Game.objects.create(
+            white_player=self.viewer,
+            black_player=self.opponent,
+            winner=self.viewer,
+            status=Game.Status.FINISHED,
+            started_at=finished_at - timedelta(minutes=25),
+            finished_at=finished_at,
+        )
+        excluded = Game.objects.create(
+            white_player=self.opponent,
+            black_player=self.viewer,
+            winner=self.opponent,
+            status=Game.Status.FINISHED,
+            finished_at=finished_at,
+        )
+        Game.objects.filter(pk=excluded.pk).update(
+            created_at=finished_at - timedelta(minutes=55)
+        )
+
+        self.client.force_login(
+            get_user_model().objects.create_superuser(username="game-admin")
+        )
+        list_url = reverse("admin:backgammon_game_changelist")
+        index = (
+            self.client.get(list_url).context["cl"].list_display.index("game_duration")
+        )
+        ordered = self.client.get(list_url, {"o": f"-{index}"})
+        self.assertEqual(list(ordered.context["cl"].result_list), [excluded, normal])
+        self.assertContains(ordered, "Длительность")
+        self.assertContains(ordered, "00:55:00")
+
+        change_url = reverse("admin:backgammon_game_change", args=[excluded.pk])
+        detail = self.client.get(change_url)
+        self.assertContains(detail, "00:55:00")
+        admin_form = detail.context["adminform"]
+        self.assertIn("game_duration", admin_form.readonly_fields)
+        data = {
+            field.name: field.value()
+            for field in admin_form.form
+            if field.value() is not None
+        }
+        data["exclude_from_statistics"] = "on"
+        self.assertRedirects(self.client.post(change_url, data), list_url)
+        excluded.refresh_from_db()
+        self.assertTrue(excluded.exclude_from_statistics)
+
+        for viewer in (self.viewer, self.opponent):
+            with self.subTest(viewer=viewer.pk):
+                self.client.force_login(viewer)
+                with patch("backgammon.views.timezone.now", return_value=finished_at):
+                    response = self.client.get(reverse("backgammon:game_list"))
+                stats = response.context["stats"]
+                self.assertEqual(stats["total_duration"], "25 мин")
+                self.assertEqual(stats["average_duration"], "25 мин")
+                self.assertEqual((stats["wins"], stats["losses"]), (1, 1))
+                self.assertEqual(stats["months"][-1]["count"], 2)
 
     def test_setup_modal_shows_effective_doubles_selection(self) -> None:
         """The checkbox and badge explain the resolved admin/environment setting."""
