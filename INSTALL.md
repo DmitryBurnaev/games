@@ -63,6 +63,8 @@ Required production values:
 - `SQLITE_PATH`, normally `/app/.data/db.sqlite3`
 - `REDIS_URL`, normally `redis://redis:6379/0` for the bundled Compose Redis
 
+Include `127.0.0.1` in `DJANGO_ALLOWED_HOSTS` for the container health check.
+
 The SQLite database is stored on the host at `${TARGET_DIR}/.data/db.sqlite3`
 through the Docker bind mount `${TARGET_DIR}/.data:/app/.data`.
 The app container runs as UID/GID `1010`, so `${TARGET_DIR}/.data` must be writable
