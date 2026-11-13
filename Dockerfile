@@ -23,12 +23,13 @@ RUN pip install uv==${UV_VERSION} && \
 
 FROM python:3.14-alpine AS base
 ARG PIP_DEFAULT_TIMEOUT=300
-ARG PIP_VERSION=25.3
+ARG PIP_VERSION=26.2
 WORKDIR /app
 
 COPY --from=requirements-layer /usr/src/requirements.txt .
 
-RUN pip install --upgrade pip==${PIP_VERSION} && \
+RUN apk upgrade --no-cache zlib && \
+    pip install --upgrade pip==${PIP_VERSION} && \
     pip install --timeout "${PIP_DEFAULT_TIMEOUT}" --no-cache-dir --require-hashes -r requirements.txt
 
 RUN addgroup -S backgammon -g 1010 && \

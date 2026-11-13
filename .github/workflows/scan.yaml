@@ -33,9 +33,9 @@ jobs:
       matrix:
         include:
           - target: image
-            artifact: trivy-results
+            artifact: trivy-image
           - target: filesystem
-            artifact: trivy-fs-results
+            artifact: trivy-fs
     permissions:
       contents: read
     steps:
