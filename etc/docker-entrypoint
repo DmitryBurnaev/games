@@ -62,7 +62,7 @@ case "${APP_SERVICE}" in
     print_caption "Black check"
     black --check --workers 1 .
     print_caption "Ruff check"
-    ruff check src
+    ruff check --no-cache src
     print_caption "Django check"
     python src/manage.py check
     ;;

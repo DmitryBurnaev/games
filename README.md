@@ -251,8 +251,8 @@ Workflows:
 
 The Trivy filesystem scan includes development dependencies from `uv.lock` and
 checks supported infrastructure configuration; it is not a general Python or
-JavaScript source-code analyzer. Its report is `trivy-fs-results`; the image
-report is `trivy-results`. A finding in either scan fails its job, including
+JavaScript source-code analyzer. Its report is `trivy-fs`; the image
+report is `trivy-image`. A finding in either scan fails its job, including
 LOW-severity findings. CI failures caused by scan or database download errors
 must be investigated separately from vulnerability findings.
 
