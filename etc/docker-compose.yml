@@ -13,6 +13,12 @@ services:
       - 127.0.0.1:${APP_PORT}:${APP_PORT}
     volumes:
       - ${PWD}/.data:/app/.data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${APP_PORT}/health/"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     depends_on:
       - redis
 
