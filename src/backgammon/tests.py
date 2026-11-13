@@ -2007,8 +2007,8 @@ class GameLobbyTests(TestCase):
         self.assertEqual(len(response.context["my_games"]), 11)
         self.assertEqual((stats["wins"], stats["losses"]), (22, 1))
         self.assertEqual(stats["win_percent"], 96)
-        self.assertEqual(stats["total_duration"], "5 часов")
-        self.assertEqual(stats["average_duration"], "13 мин")
+        self.assertEqual(stats["total_duration"], "0 д. 5 ч. 0 мин")
+        self.assertEqual(stats["average_duration"], "0 д. 0 ч. 13 мин")
         self.assertEqual(
             [(month["date"], month["count"]) for month in stats["months"]],
             [(date(2025, month, 1), 0) for month in range(2, 12)]
@@ -2028,7 +2028,7 @@ class GameLobbyTests(TestCase):
         empty = self.client.get(url)
         self.assertContains(empty, "Пока нет результатов")
         self.assertContains(empty, "Нет данных")
-        self.assertEqual(empty.context["stats"]["total_duration"], "0 мин")
+        self.assertEqual(empty.context["stats"]["total_duration"], "0 д. 0 ч. 0 мин")
 
         Game.objects.create(
             white_player=self.viewer,
@@ -2048,7 +2048,7 @@ class GameLobbyTests(TestCase):
         for duration in (
             timedelta(),
             timedelta(minutes=25),
-            timedelta(hours=22),
+            timedelta(days=1, hours=22),
         ):
             Game.objects.create(
                 white_player=self.viewer,
@@ -2061,8 +2061,8 @@ class GameLobbyTests(TestCase):
 
         response = self.client.get(reverse("backgammon:game_list"))
         stats = response.context["stats"]
-        self.assertEqual(stats["average_duration"], "7 часов 28 мин")
-        self.assertEqual(stats["total_duration"], "22 часов 25 мин")
+        self.assertEqual(stats["average_duration"], "0 д. 15 ч. 28 мин")
+        self.assertEqual(stats["total_duration"], "1 д. 22 ч. 25 мин")
 
     def test_dashboard_has_no_average_when_all_games_are_marked(self) -> None:
         """Excluded games alone contribute no time and cannot produce an average."""
@@ -2078,7 +2078,7 @@ class GameLobbyTests(TestCase):
 
         response = self.client.get(reverse("backgammon:game_list"))
         self.assertIsNone(response.context["stats"]["average_duration"])
-        self.assertEqual(response.context["stats"]["total_duration"], "0 мин")
+        self.assertEqual(response.context["stats"]["total_duration"], "0 д. 0 ч. 0 мин")
         self.assertContains(response, "Нет данных")
 
     def test_admin_can_find_and_exclude_a_game_from_lobby_durations(self) -> None:
@@ -2136,8 +2136,8 @@ class GameLobbyTests(TestCase):
                 with patch("backgammon.views.timezone.now", return_value=finished_at):
                     response = self.client.get(reverse("backgammon:game_list"))
                 stats = response.context["stats"]
-                self.assertEqual(stats["total_duration"], "25 мин")
-                self.assertEqual(stats["average_duration"], "25 мин")
+                self.assertEqual(stats["total_duration"], "0 д. 0 ч. 25 мин")
+                self.assertEqual(stats["average_duration"], "0 д. 0 ч. 25 мин")
                 self.assertEqual((stats["wins"], stats["losses"]), (1, 1))
                 self.assertEqual(stats["months"][-1]["count"], 2)
 
