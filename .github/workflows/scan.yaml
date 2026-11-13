@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "main"
+      - "feature/49-project-quality-checks" # Temporary: validate scan changes before merge.
   schedule:
     - cron: "0 0 * * 1"
 
@@ -12,7 +13,9 @@ permissions:
 
 env:
   DOCKER_IMAGE: games:scan-${{ github.sha }}
-  TRIVY_VERSION: "v0.67.2"
+  TRIVY_VERSION: "v0.76.2"
+  # SHA-256 of the Linux x86-64 archive, from the immutable upstream release.
+  TRIVY_SHA256: "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"
   TRIVY_SEVERITY: "CRITICAL,HIGH,MEDIUM,LOW"
   OPENGREP_VERSION: "v1.11.2"
   OPENGREP_RULES_REVISION: "f1d2b562b414783763fd02a6ed2736eaed622efa"
@@ -22,6 +25,75 @@ env:
   GITLEAKS_IGNORE_PATH: ".github/scan/gitleaks-ignore.txt"
 
 jobs:
+  trivy:
+    name: trivy ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: image
+            artifact: trivy-results
+          - target: filesystem
+            artifact: trivy-fs-results
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install verified Trivy release
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/trivy.tar.gz"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VERSION}/trivy_${TRIVY_VERSION#v}_Linux-64bit.tar.gz" \
+            -o "${archive}"
+          echo "${TRIVY_SHA256}  ${archive}" | sha256sum --check --status
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}" trivy
+          "${RUNNER_TEMP}/trivy" --version
+
+      - name: Build service image
+        if: matrix.target == 'image'
+        run: docker build --target service --tag "${DOCKER_IMAGE}" .
+
+      - name: Scan image (report)
+        if: matrix.target == 'image'
+        run: |
+          "${RUNNER_TEMP}/trivy" image --scanners vuln --severity "${TRIVY_SEVERITY}" \
+            --exit-code 0 --format json --output "${RUNNER_TEMP}/trivy-results.json" "${DOCKER_IMAGE}"
+          jq -e 'type == "object" and has("SchemaVersion")' "${RUNNER_TEMP}/trivy-results.json" > /dev/null
+
+      - name: Scan filesystem (report)
+        if: matrix.target == 'filesystem'
+        run: |
+          "${RUNNER_TEMP}/trivy" fs --scanners vuln,misconfig --include-dev-deps --severity "${TRIVY_SEVERITY}" \
+            --exit-code 0 --format json --output "${RUNNER_TEMP}/trivy-results.json" .
+          jq -e 'type == "object" and has("SchemaVersion")' "${RUNNER_TEMP}/trivy-results.json" > /dev/null
+
+      - name: Upload scan results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.artifact }}
+          path: "${{ runner.temp }}/trivy-results.json"
+          retention-days: 60
+          if-no-files-found: error
+
+      - name: Scan image (alert)
+        if: matrix.target == 'image'
+        run: |
+          "${RUNNER_TEMP}/trivy" image --scanners vuln --severity "${TRIVY_SEVERITY}" \
+            --exit-code 1 "${DOCKER_IMAGE}"
+
+      - name: Scan filesystem (alert)
+        if: matrix.target == 'filesystem'
+        run: |
+          "${RUNNER_TEMP}/trivy" fs --scanners vuln,misconfig --include-dev-deps --severity "${TRIVY_SEVERITY}" \
+            --exit-code 1 .
+
   trufflehog:
     name: trufflehog
     runs-on: ubuntu-24.04

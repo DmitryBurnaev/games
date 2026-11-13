@@ -1,4 +1,5 @@
 .DEFAULT_GOAL := help
+UV ?= uv
 
 .PHONY: help
 help: ## Show this help
@@ -6,32 +7,38 @@ help: ## Show this help
 
 .PHONY: install
 install: ## Install local dependencies
-	uv sync
+	$(UV) sync
 
 .PHONY: check
 check: ## Run Django system checks
-	uv run python src/manage.py check
+	$(UV) run python src/manage.py check
 
 .PHONY: test
 test: ## Run Django tests
-	uv run python src/manage.py test backgammon
+	$(UV) run python src/manage.py test backgammon games
 
 .PHONY: format
 format: ## Format Python code
-	uv run black .
+	$(UV) run black .
 
 .PHONY: lint
-lint: ## Check formatting and Django settings
-	uv run black --check .
-	uv run python src/manage.py check
+lint: ## Check formatting, Python lint, JavaScript syntax and Django settings
+	$(UV) run black --check .
+	$(UV) run ruff check src
+	node --check src/backgammon/static/backgammon/game.js
+	$(UV) run python src/manage.py check
+
+.PHONY: typecheck
+typecheck: ## Run the experimental Django-aware Python type check
+	PYTHONPATH=src $(UV) run mypy src
 
 .PHONY: migrate
 migrate: ## Apply local migrations
-	uv run python src/manage.py migrate
+	$(UV) run python src/manage.py migrate
 
 .PHONY: run
 run: ## Run the local Django development server
-	uv run python src/manage.py runserver
+	$(UV) run python src/manage.py runserver
 
 .PHONY: run-in-docker
 run-in-docker: .env ## Run app through Docker Compose

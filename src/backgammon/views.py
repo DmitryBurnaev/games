@@ -97,6 +97,14 @@ def game_duration_label(duration: timedelta) -> str:
     return " ".join(parts)
 
 
+def statistics_duration_label(duration: timedelta) -> str:
+    """Show all duration units in the lobby statistics cards."""
+    total_minutes = max(int(duration.total_seconds() // 60), 0)
+    days, remaining_minutes = divmod(total_minutes, 24 * 60)
+    hours, minutes = divmod(remaining_minutes, 60)
+    return f"{days} д. {hours} ч. {minutes} мин"
+
+
 def lobby_statistics(viewer_id: int) -> dict[str, Any]:
     """Summarize the viewer's full finished game history for the lobby."""
     today = timezone.localdate(timezone=MOSCOW_TZ)
@@ -151,9 +159,9 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
         "results_count": results_count,
         "win_percent": win_percent,
         "months": months,
-        "total_duration": game_duration_label(total_duration),
+        "total_duration": statistics_duration_label(total_duration),
         "average_duration": (
-            game_duration_label(total_duration / duration_count)
+            statistics_duration_label(total_duration / duration_count)
             if duration_count
             else None
         ),

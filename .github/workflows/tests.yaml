@@ -31,5 +31,12 @@ jobs:
       - name: Run linters
         run: docker compose up --exit-code-from lint lint
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.11.1
+
+      - name: Check JavaScript syntax
+        run: node --check src/backgammon/static/backgammon/game.js
+
       - name: Run tests
         run: docker compose up --exit-code-from test test
