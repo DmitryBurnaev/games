@@ -23,12 +23,14 @@ RUN pip install uv==${UV_VERSION} && \
 
 FROM python:3.14-alpine AS base
 ARG PIP_DEFAULT_TIMEOUT=300
-ARG PIP_VERSION=25.3
+ARG PIP_VERSION=26.3
 WORKDIR /app
 
 COPY --from=requirements-layer /usr/src/requirements.txt .
 
-RUN pip install --upgrade pip==${PIP_VERSION} && \
+RUN apk upgrade --no-cache zlib && \
+    apk add --no-cache curl && \
+    pip install --upgrade pip==${PIP_VERSION} && \
     pip install --timeout "${PIP_DEFAULT_TIMEOUT}" --no-cache-dir --require-hashes -r requirements.txt
 
 RUN addgroup -S backgammon -g 1010 && \
@@ -49,14 +51,17 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
 ENV APP_PORT=8000
 
+FROM base AS tests
+
+COPY pyproject.toml .
+
+ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint"]
+
 FROM base AS service
 
 EXPOSE 8000
 
-ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint"]
-
-FROM base AS tests
-
-COPY pyproject.toml .
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python src/manage.py check
 
 ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint"]

@@ -18,7 +18,8 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "games.settings")
 
 django_asgi_app = get_asgi_application()
 
-from backgammon.routing import websocket_urlpatterns
+# Django must initialize before importing consumers and their models.
+from backgammon.routing import websocket_urlpatterns  # noqa: E402
 
 application = ProtocolTypeRouter(
     {

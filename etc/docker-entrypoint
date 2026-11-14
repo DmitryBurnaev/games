@@ -54,13 +54,15 @@ case "${APP_SERVICE}" in
     print_caption "Django check"
     python src/manage.py check
     print_caption "Run tests"
-    python src/manage.py test backgammon
+    python src/manage.py test backgammon games
     ;;
   lint)
     check_required_env
     prepare_sqlite_dir
     print_caption "Black check"
     black --check --workers 1 .
+    print_caption "Ruff check"
+    ruff check --no-cache src
     print_caption "Django check"
     python src/manage.py check
     ;;

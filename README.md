@@ -112,8 +112,9 @@ Common commands:
 make install         # install dependencies with uv
 make env             # create .env from .env.template if it does not exist
 make check           # run Django system checks
-make test            # run Django tests for backgammon
-make lint            # run black --check and Django checks
+make test            # run Django tests for backgammon and games
+make lint            # check formatting, Python lint, JS syntax and Django
+make typecheck       # experimental: Django-aware mypy (known errors)
 make format          # format Python code with black
 make migrate         # apply Django migrations locally
 make run             # start Django dev server
@@ -121,6 +122,9 @@ make run-in-docker   # build and run app with Docker Compose
 make test-in-docker  # run tests in Docker
 make lint-in-docker  # run lint checks in Docker
 ```
+
+See [quality checks and regression scenarios](docs/quality-checks.md) for the
+baseline, check scope, known limitations, and two-player smoke procedure.
 
 ## Environment Variables
 
@@ -238,8 +242,34 @@ Workflows:
   runs Dockerized lint, then Dockerized tests.
 - `release.yaml`: runs on semver tags like `0.1.0`; builds and pushes the service image
   to GHCR, creates a GitHub Release, copies deployment files to the server, and runs deploy.
-- `scan.yaml`: runs secret/static scans on `main` and weekly.
+- `scan.yaml`: scans the service image and filesystem with pinned Trivy, and
+  runs secret/static scans on `main` and weekly. The filesystem scan checks
+  dependency vulnerabilities and configuration; Opengrep checks source code.
+  Trivy saves separate JSON reports and fails its jobs for findings at the
+  configured severity levels.
 - `codeql.yaml`: runs CodeQL Python analysis on `main` and weekly.
+
+The image scan applies `.github/scan/trivy-ignore.rego` to three findings for
+the `setuptools 70.3.0` component in the inspected Python base-image SBOM. Pip
+vendors only `pkg_resources`, not the vulnerable code. The exceptions are
+restricted to the inspected amd64 and arm64 base layers; review them whenever
+the base image changes. The filesystem scan does not use this policy.
+
+The Trivy filesystem scan includes development dependencies from `uv.lock` and
+checks supported infrastructure configuration; it is not a general Python or
+JavaScript source-code analyzer. Its report is `trivy-fs`; the image
+report is `trivy-image`. A finding in either scan fails its job, including
+LOW-severity findings. CI failures caused by scan or database download errors
+must be investigated separately from vulnerability findings.
+
+The Trivy jobs use separate GitHub-hosted runners, read-only repository
+permissions, no persisted checkout credentials, a pinned binary SHA-256, and
+full commit SHAs for checkout and artifact upload. Updating Trivy requires
+reviewing both its version and archive hash. These controls do not prove a
+release was safe before publication: Trivy's vulnerability database and
+configuration checks are downloaded separately and the runner has network
+access. Other jobs in the workflow have their own dependencies and are not
+covered by these Trivy-specific controls.
 
 ### CI/CD Secrets
 
@@ -296,7 +326,7 @@ bin/service health
 
 ```bash
 uv run python src/manage.py check
-uv run python src/manage.py test backgammon
+uv run python src/manage.py test backgammon games
 uv run black --check .
 docker compose config
 docker compose up --build app
