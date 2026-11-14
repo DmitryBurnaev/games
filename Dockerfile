@@ -23,7 +23,7 @@ RUN pip install uv==${UV_VERSION} && \
 
 FROM python:3.14-alpine AS base
 ARG PIP_DEFAULT_TIMEOUT=300
-ARG PIP_VERSION=26.2
+ARG PIP_VERSION=26.3
 WORKDIR /app
 
 COPY --from=requirements-layer /usr/src/requirements.txt .

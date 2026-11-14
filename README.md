@@ -249,6 +249,12 @@ Workflows:
   configured severity levels.
 - `codeql.yaml`: runs CodeQL Python analysis on `main` and weekly.
 
+The image scan applies `.github/scan/trivy-ignore.rego` to three findings for
+the `setuptools 70.3.0` component in the inspected Python base-image SBOM. Pip
+vendors only `pkg_resources`, not the vulnerable code. The exceptions are
+restricted to the inspected amd64 and arm64 base layers; review them whenever
+the base image changes. The filesystem scan does not use this policy.
+
 The Trivy filesystem scan includes development dependencies from `uv.lock` and
 checks supported infrastructure configuration; it is not a general Python or
 JavaScript source-code analyzer. Its report is `trivy-fs`; the image

@@ -17,6 +17,7 @@ env:
   # SHA-256 of the Linux x86-64 archive, from the immutable upstream release.
   TRIVY_SHA256: "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf"
   TRIVY_SEVERITY: "CRITICAL,HIGH,MEDIUM,LOW"
+  TRIVY_IMAGE_IGNORE_POLICY: ".github/scan/trivy-ignore.rego"
   OPENGREP_VERSION: "v1.11.2"
   OPENGREP_RULES_REVISION: "f1d2b562b414783763fd02a6ed2736eaed622efa"
   OPENGREP_EXCLUDE_RULES: ".github/scan/opengrep-exclude-rules.txt"
@@ -63,6 +64,7 @@ jobs:
         if: matrix.target == 'image'
         run: |
           "${RUNNER_TEMP}/trivy" image --scanners vuln --severity "${TRIVY_SEVERITY}" \
+            --ignore-policy "${TRIVY_IMAGE_IGNORE_POLICY}" \
             --exit-code 0 --format json --output "${RUNNER_TEMP}/trivy-results.json" "${DOCKER_IMAGE}"
           jq -e 'type == "object" and has("SchemaVersion")' "${RUNNER_TEMP}/trivy-results.json" > /dev/null
 
@@ -86,6 +88,7 @@ jobs:
         if: matrix.target == 'image'
         run: |
           "${RUNNER_TEMP}/trivy" image --scanners vuln --severity "${TRIVY_SEVERITY}" \
+            --ignore-policy "${TRIVY_IMAGE_IGNORE_POLICY}" \
             --exit-code 1 "${DOCKER_IMAGE}"
 
       - name: Scan filesystem (alert)
