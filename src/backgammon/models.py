@@ -82,6 +82,14 @@ def initial_board() -> Board:
 class Game(models.Model):
     """A single online long-backgammon game and its current board state."""
 
+    # Set on instances when rendering lobby lists; these are not model fields.
+    started_at_label: str
+    duration_label: str
+    winner_is_viewer: bool
+    white_player_label: str
+    black_player_label: str
+    waiting_player_label: str
+
     class Color(models.TextChoices):
         WHITE = "white", "White"
         BLACK = "black", "Black"

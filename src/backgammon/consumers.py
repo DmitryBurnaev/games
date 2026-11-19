@@ -22,7 +22,11 @@ class GameStateConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = game_group_name(self.game_id)
         user = self.scope["user"]
 
-        if not user.is_authenticated or not await self.can_view_game(user):
+        if (
+            user is None
+            or not user.is_authenticated
+            or not await self.can_view_game(user)
+        ):
             await self.close()
             return
 

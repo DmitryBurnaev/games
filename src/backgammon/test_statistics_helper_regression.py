@@ -5,7 +5,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from .models import Game, GameMove
+from .models import Board, Game, GameMove
 from .services import (
     apply_move,
     create_roll,
@@ -32,7 +32,7 @@ class StatisticsHelperRegressionTests(TestCase):
     def make_game(
         self, white_point: int, black_point: int, checker_count: int = 15
     ) -> Game:
-        board = [None] * 24
+        board: Board = [None] * 24
         board[white_point] = {"color": Game.Color.WHITE, "count": checker_count}
         board[black_point] = {"color": Game.Color.BLACK, "count": checker_count}
         return Game.objects.create(

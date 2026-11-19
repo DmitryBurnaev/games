@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.db.utils import DatabaseError, OperationalError, ProgrammingError
+from django.db.models import Field
 from django.test import SimpleTestCase, TestCase
 
 from .app_settings import active_setting_values
@@ -56,6 +57,8 @@ class EmptyJsonCollectionTests(TestCase):
         ):
             with self.subTest(model=type(instance).__name__, field=field_name):
                 field = instance._meta.get_field(field_name)
+                self.assertIsInstance(field, Field)
+                assert isinstance(field, Field)
                 self.assertEqual(getattr(instance, field_name), expected)
                 self.assertFalse(field.null)
                 field.validate(expected, instance)

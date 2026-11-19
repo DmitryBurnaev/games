@@ -3,6 +3,7 @@ from collections import Counter
 from importlib import import_module
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
 from pathlib import Path
+from typing import Any, Iterable, cast
 from unittest.mock import call, patch
 
 from asgiref.sync import async_to_sync
@@ -14,7 +15,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.apps import apps as django_apps
 from django.core.exceptions import ValidationError
 from django.db import connection
-from django.forms import modelform_factory
+from django.forms import ChoiceField, modelform_factory
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 
@@ -32,6 +33,7 @@ from .admin import AppSettingAdminForm
 from .models import (
     AppSetting,
     BackgammonPlayerPreference,
+    Board,
     Game,
     GameMove,
     GameNotification,
@@ -197,7 +199,12 @@ class AppSettingsTests(TestCase):
         form = AppSettingAdminForm()
         self.assertIn(
             AppSetting.Key.BACKGAMMON_DOUBLES_SELECTION_MODE,
-            dict(form.fields["key"].choices),
+            dict(
+                cast(
+                    Iterable[tuple[str, str]],
+                    cast(ChoiceField, form.fields["key"]).choices,
+                )
+            ),
         )
         help_text = str(form.fields["value"].help_text)
         for text in (
@@ -333,7 +340,12 @@ class AppSettingsTests(TestCase):
 
     def test_admin_form_shows_raw_setting_keys(self) -> None:
         """Admin key choices use the exact runtime setting names."""
-        choices = dict(AppSettingAdminForm().fields["key"].choices)
+        choices = dict(
+            cast(
+                Iterable[tuple[str, str]],
+                cast(ChoiceField, AppSettingAdminForm().fields["key"]).choices,
+            )
+        )
 
         self.assertEqual(
             choices[AppSetting.Key.BACKGAMMON_DEBUG_TOOLS],
@@ -477,7 +489,7 @@ class GameStateWebSocketTests(TransactionTestCase):
             current_player=self.white,
             status=Game.Status.ACTIVE,
         )
-        self.application = URLRouter(websocket_urlpatterns)
+        self.application = URLRouter(websocket_urlpatterns)  # type: ignore[arg-type]
 
     def communicator(
         self, user: object, game: Game | None = None
@@ -488,7 +500,7 @@ class GameStateWebSocketTests(TransactionTestCase):
             self.application,
             f"/ws/games/{game.pk}/",
         )
-        communicator.scope["user"] = user
+        cast(dict[str, Any], communicator.scope)["user"] = user
         return communicator
 
     def test_participant_receives_initial_viewer_specific_state(self) -> None:
@@ -560,6 +572,7 @@ class GameStateWebSocketTests(TransactionTestCase):
         await communicator.receive_json_from(timeout=5)
 
         channel_layer = get_channel_layer()
+        assert channel_layer is not None
         await channel_layer.group_send(
             game_group_name(self.game.pk),
             {"type": "game.updated"},
@@ -593,6 +606,7 @@ class GameStateWebSocketTests(TransactionTestCase):
             update_fields=["black_player", "current_player", "status", "updated_at"]
         )
         channel_layer = get_channel_layer()
+        assert channel_layer is not None
         await channel_layer.group_send(
             game_group_name(waiting_game.pk),
             {"type": "game.updated"},
@@ -1037,6 +1051,24 @@ class GameRulesTests(TestCase):
         self.assertEqual(game.current_player, self.white)
         self.assertEqual(game.head_moves_this_turn, 0)
 
+    def test_undo_rejects_move_with_missing_source_or_distance(self) -> None:
+        """Incomplete historical moves cannot partially mutate the game on undo."""
+        for field in ("source_point", "distance"):
+            with self.subTest(field=field):
+                game = self.active_game()
+                apply_move(game, self.white, 0, 1)
+                move = game.moves.filter(action=GameMove.Action.MOVE).latest("pk")
+                GameMove.objects.filter(pk=move.pk).update(**{field: None})
+                original_board = game.board
+                original_remaining_moves = game.remaining_moves[:]
+
+                with self.assertRaisesMessage(GameError, "некорректный ход"):
+                    undo_last_move(game, self.white)
+
+                game.refresh_from_db()
+                self.assertEqual(game.board, original_board)
+                self.assertEqual(game.remaining_moves, original_remaining_moves)
+
     def test_last_move_waits_for_explicit_finish_and_allows_undo(self) -> None:
         """The last checker move keeps the turn open until explicit finish."""
         game = self.active_game()
@@ -1108,7 +1140,7 @@ class GameRulesTests(TestCase):
 
     def test_blocking_event_detects_opponent_before_home_block(self) -> None:
         """An opponent that has not passed a home block does not make it legal."""
-        board = [None for _ in range(24)]
+        board: Board = [None for _ in range(24)]
         for point in range(18, 24):
             board[point] = {"color": Game.Color.WHITE, "count": 1}
         board[12] = {"color": Game.Color.BLACK, "count": 15}
@@ -1120,7 +1152,7 @@ class GameRulesTests(TestCase):
 
     def test_blocking_event_detects_more_than_six_points(self) -> None:
         """A run longer than six stays prohibited when no opponent is ahead."""
-        board = [None for _ in range(24)]
+        board: Board = [None for _ in range(24)]
         for point in range(16, 23):
             board[point] = {"color": Game.Color.WHITE, "count": 1}
         board[12] = {"color": Game.Color.BLACK, "count": 15}
@@ -1132,7 +1164,7 @@ class GameRulesTests(TestCase):
 
     def test_blocking_event_allows_opponent_ahead(self) -> None:
         """A six-point configuration is legal when an opponent is ahead."""
-        board = [None for _ in range(24)]
+        board: Board = [None for _ in range(24)]
         for point in range(10, 16):
             board[point] = {"color": Game.Color.WHITE, "count": 1}
         board[16] = {"color": Game.Color.BLACK, "count": 1}
@@ -1141,7 +1173,7 @@ class GameRulesTests(TestCase):
 
     def test_blocking_event_follows_black_path_across_numeric_boundary(self) -> None:
         """Black runs remain consecutive across points 23 and 0."""
-        board = [None for _ in range(24)]
+        board: Board = [None for _ in range(24)]
         for point in [22, 23, 0, 1, 2, 3]:
             board[point] = {"color": Game.Color.BLACK, "count": 1}
 
@@ -1152,7 +1184,7 @@ class GameRulesTests(TestCase):
 
     def test_blocking_event_does_not_wrap_from_home_to_head(self) -> None:
         """The end and beginning of one player's path are not consecutive."""
-        board = [None for _ in range(24)]
+        board: Board = [None for _ in range(24)]
         for point in [21, 22, 23, 0, 1, 2]:
             board[point] = {"color": Game.Color.WHITE, "count": 1}
 
@@ -1221,7 +1253,7 @@ class GameRulesTests(TestCase):
 
     def test_game_103_block_allows_white_checker_that_has_passed_it(self) -> None:
         """A white checker past the black block still permits turn completion."""
-        board = [None for _ in range(24)]
+        board: Board = [None for _ in range(24)]
         for point in range(15, 21):
             board[point] = {"color": Game.Color.BLACK, "count": 1}
         board[21] = {"color": Game.Color.WHITE, "count": 1}
@@ -1478,7 +1510,7 @@ class GameRulesTests(TestCase):
                 patch("backgammon.services.roll_dice_from_player_bag") as bag,
             ):
                 for player in (self.white, self.black):
-                    counts = Counter()
+                    counts: Counter[int] = Counter()
                     for left in range(1, 7):
                         for right in range(1, 7):
                             random_face.reset_mock()
@@ -1565,7 +1597,7 @@ class GameRulesTests(TestCase):
     @patch("backgammon.services.roll_die", return_value=1)
     def test_doubles_only_victory_updates_normal_statistics(self, mocked_roll) -> None:
         """Double games use normal victory stats and exclude the winning roll."""
-        board = [None] * 24
+        board: Board = [None] * 24
         board[22] = {"color": Game.Color.WHITE, "count": 1}
         board[12] = {"color": Game.Color.BLACK, "count": 1}
         game = Game.objects.create(

@@ -22,14 +22,15 @@ format: ## Format Python code
 	$(UV) run black .
 
 .PHONY: lint
-lint: ## Check formatting, Python lint, JavaScript syntax and Django settings
+lint: ## Check formatting, Python lint and types, JavaScript syntax and Django settings
 	$(UV) run black --check .
 	$(UV) run ruff check src
+	PYTHONPATH=src $(UV) run mypy src
 	node --check src/backgammon/static/backgammon/game.js
 	$(UV) run python src/manage.py check
 
 .PHONY: typecheck
-typecheck: ## Run the experimental Django-aware Python type check
+typecheck: ## Run the Django-aware Python type check
 	PYTHONPATH=src $(UV) run mypy src
 
 .PHONY: migrate

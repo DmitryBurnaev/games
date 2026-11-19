@@ -143,7 +143,7 @@ class FinishedGameLoadingTests(TestCase):
         request.user = self.white
 
         with CaptureQueriesContext(connection) as queries:
-            response = game_state.__wrapped__(request, self.game.pk)
+            response = game_state.__wrapped__(request, self.game.pk)  # type: ignore[attr-defined]
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(queries), 3)

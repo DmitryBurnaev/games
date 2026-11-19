@@ -19,6 +19,7 @@ dev = [
     "django-stubs==5.2.9",
     "mypy==1.19.1",
     "ruff==0.14.10",
+    "types-channels==4.3.0.20260408",
 ]
 
 [tool.black]

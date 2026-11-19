@@ -6,7 +6,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from .models import Game, GameMove
+from .models import Board, Game, GameMove
 from .services import (
     apply_move,
     effective_game_history,
@@ -43,7 +43,7 @@ class FinishedSummaryTimestampRegressionTests(TestCase):
 
     def gameplay_fields(self, game: Game) -> dict[str, object]:
         """Capture every persisted field except the two materialized summaries."""
-        values = Game.objects.values().get(pk=game.pk)
+        values: dict[str, object] = dict(Game.objects.values().get(pk=game.pk))
         values.pop("finished_dice_statistics")
         values.pop("finished_skipped_statistics")
         return values
@@ -110,7 +110,7 @@ class FinishedSummaryTimestampRegressionTests(TestCase):
         self.assertEqual(Game.objects.values().get(pk=game.pk), action_state)
 
     def test_victory_updates_gameplay_timestamps_before_summary(self) -> None:
-        board = [None] * 24
+        board: Board = [None] * 24
         board[23] = {"color": Game.Color.WHITE, "count": 1}
         board[12] = {"color": Game.Color.BLACK, "count": 1}
         game = self.create_game(
