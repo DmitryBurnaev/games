@@ -147,8 +147,9 @@ def datetime_payload(value: Any) -> str | None:
 
 def game_history(game: Game) -> list[dict[str, Any]]:
     """Load ordered audit events needed by a projection without board snapshots."""
-    events = list(
-        game.moves.order_by("created_at", "pk").values(
+    events: list[dict[str, Any]] = [
+        dict(event.items())
+        for event in game.moves.order_by("created_at", "pk").values(
             "pk",
             "player_id",
             "action",
@@ -161,7 +162,7 @@ def game_history(game: Game) -> list[dict[str, Any]]:
             "metadata",
             "created_at",
         )
-    )
+    ]
     boundaries = (
         game.position_sets.order_by("created_at", "pk").values(
             "pk", "player_id", "turn_number", "metadata", "created_at"
@@ -587,7 +588,7 @@ def place_debug_checker(
     game: Game,
     user: Any,
     color: str,
-    point: int,
+    point: Any,
 ) -> None:
     """Relocate a checker and start a fresh debug turn for the requesting player."""
     if game.status != Game.Status.ACTIVE:
@@ -596,6 +597,7 @@ def place_debug_checker(
         raise GameError("Вы не участвуете в этой игре.")
     if color not in Game.Color.values:
         raise GameError("Некорректный цвет шашки.")
+    checker_color = Game.Color(color)
     if isinstance(point, bool) or not isinstance(point, int) or not 0 <= point < 24:
         raise GameError("Некорректный пункт.")
 
@@ -604,7 +606,7 @@ def place_debug_checker(
         candidate: int(game.borne_off.get(candidate, 0))
         for candidate in Game.Color.values
     }
-    for candidate in Game.Color.values:
+    for candidate in Game.Color:
         if checker_total(board, borne_off, candidate) != game.checker_count:
             raise GameError("Нельзя изменить несогласованную расстановку шашек.")
 
@@ -626,12 +628,12 @@ def place_debug_checker(
             raise GameError("Все шашки этого цвета уже находятся на выбранном пункте.")
         donor_point = max(
             donor_points,
-            key=lambda index: int(board[index].get("count", 0)),
+            key=lambda index: int((board[index] or {}).get("count", 0)),
         )
         remove_checker(board, donor_point)
 
-    add_checker(board, point, color)
-    for candidate in Game.Color.values:
+    add_checker(board, point, checker_color)
+    for candidate in Game.Color:
         if checker_total(board, borne_off, candidate) != game.checker_count:
             raise GameError("Не удалось сохранить количество шашек.")
 
@@ -1176,7 +1178,10 @@ def quick_notifications_for_viewer(
 
 def quick_notification_options() -> list[dict[str, str]]:
     """Return admin-configured notification controls in display order."""
-    return list(QuickNotificationPreset.objects.values("text", "emoji"))
+    return [
+        {"text": item["text"], "emoji": item["emoji"]}
+        for item in QuickNotificationPreset.objects.values("text", "emoji")
+    ]
 
 
 def create_quick_notification(
@@ -1294,7 +1299,7 @@ def active_game_projection(context: GameProjectionContext) -> dict[str, Any]:
     viewer_blocking_event = (
         game.current_player_id == viewer.id
         and game.has_rolled
-        and bool(viewer_color)
+        and viewer_color is not None
         and has_blocking_event(game.board, viewer_color)
     )
     last_move_markers_payload = last_move_markers_from_events(
@@ -1312,7 +1317,7 @@ def active_game_projection(context: GameProjectionContext) -> dict[str, Any]:
         "blocking_event": viewer_blocking_event,
         "blocking_event_points": (
             blocking_event_points(game.board, viewer_color)
-            if viewer_blocking_event
+            if viewer_blocking_event and viewer_color is not None
             else []
         ),
         "can_roll": game.current_player_id == viewer.id and not game.has_rolled,
@@ -1345,12 +1350,11 @@ def serialize_game(game: Game, viewer: Any) -> dict[str, Any]:
     runtime_settings = backgammon_game_runtime_settings(
         finished=game.status == Game.Status.FINISHED
     )
-    has_finished_statistics = (
+    if (
         game.status == Game.Status.FINISHED
         and isinstance(game.finished_dice_statistics, dict)
         and isinstance(game.finished_skipped_statistics, dict)
-    )
-    if has_finished_statistics:
+    ):
         events = (
             effective_game_history(game_history(game))
             if runtime_settings.debug_tools
@@ -1505,6 +1509,8 @@ def apply_move(game: Game, user: Any, source_point: int, distance: int) -> None:
     """Apply one validated checker move or bear-off to the board."""
     color = game.color_for(user)
     move = validate_move(game, user, source_point, distance)
+    if color is None:
+        raise GameError("Вы не участвуете в этой игре.")
     dice_before_move = game.dice[:]
 
     remove_checker(game.board, source_point)
@@ -1581,6 +1587,8 @@ def restore_head_moves_count(
 ) -> None:
     """Recompute head moves from the current effective turn before appending undo."""
     color = game.color_for(user)
+    if color is None:
+        raise GameError("Вы не участвуете в этой игре.")
     latest_roll = last_roll_event_for(events, user.id)
     if not latest_roll:
         game.head_moves_this_turn = 0
@@ -1606,6 +1614,8 @@ def undo_last_move(game: Game, user: Any) -> None:
     if latest_event["action"] not in [GameMove.Action.MOVE, GameMove.Action.BEAR_OFF]:
         raise GameError("Последнее действие нельзя отменить.")
     latest_move = game.moves.get(pk=latest_event["pk"])
+    if latest_move.source_point is None or latest_move.distance is None:
+        raise GameError("Не удалось отменить некорректный ход.")
 
     color = game.color_for(user)
     if not color:

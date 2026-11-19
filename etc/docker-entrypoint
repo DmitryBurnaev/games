@@ -63,6 +63,8 @@ case "${APP_SERVICE}" in
     black --check --workers 1 .
     print_caption "Ruff check"
     ruff check --no-cache src
+    print_caption "Mypy check"
+    MYPY_CACHE_DIR=/tmp/games-mypy-cache mypy src
     print_caption "Django check"
     python src/manage.py check
     ;;

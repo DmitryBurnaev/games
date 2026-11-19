@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Max, Q
 from django.core.paginator import Paginator
@@ -228,7 +229,7 @@ def signup(request: HttpRequest) -> HttpResponse:
         messages.warning(request, "Регистрация сейчас закрыта.")
         return redirect("login")
 
-    form = UserCreationForm(request.POST or None)
+    form: UserCreationForm[User] = UserCreationForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         user = form.save()
         login(request, user)
@@ -239,6 +240,7 @@ def signup(request: HttpRequest) -> HttpResponse:
 @login_required
 def game_list(request: HttpRequest) -> HttpResponse:
     """Render the lobby with the user's games, open games, and stats."""
+    viewer = cast(User, request.user)
     games = Game.objects.select_related(
         "white_player", "black_player", "planned_opponent", "current_player", "winner"
     )
@@ -266,7 +268,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
             "my_games": my_games,
             "finished_games_count": finished_games_count,
             "open_games": open_games,
-            "stats": lobby_statistics(request.user.pk),
+            "stats": lobby_statistics(viewer.pk),
             "default_checker_color": default_checker_color_for(request.user),
             "default_checker_count": DEFAULT_CHECKER_COUNT,
             "default_opponent_id": default_opponent_for(request.user),
@@ -275,7 +277,7 @@ def game_list(request: HttpRequest) -> HttpResponse:
                 backgammon_doubles_selection_mode()
             ],
             "opponents": get_user_model()
-            .objects.exclude(pk=request.user.pk)
+            .objects.exclude(pk=viewer.pk)
             .order_by("username"),
         },
     )
@@ -469,9 +471,9 @@ def join_game(request: HttpRequest, pk: int) -> HttpResponse:
             white_die = roll_die()
             black_die = roll_die()
         if game.white_player_id is None:
-            game.white_player = request.user
+            game.white_player = cast(User, request.user)
         else:
-            game.black_player = request.user
+            game.black_player = cast(User, request.user)
         if game.party_number is None:
             assign_party_number(game)
         game.planned_opponent = None
@@ -575,15 +577,15 @@ def move(request: HttpRequest, pk: int) -> JsonResponse:
     """Apply one checker move chosen on the board."""
     try:
         data = get_json_body(request)
-        source_point = int(data.get("source"))
-        distance = int(data.get("distance"))
+        source_point = int(data["source"])
+        distance = int(data["distance"])
         with transaction.atomic():
             game = get_participant_game(pk, request.user, for_update=True)
             apply_move(game, request.user, source_point, distance)
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
             queue_game_update(game.pk)
-    except TypeError, ValueError:
+    except KeyError, TypeError, ValueError:
         return json_error("Некорректные параметры хода.")
     except GameError as exc:
         return json_error(str(exc))

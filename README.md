@@ -113,8 +113,8 @@ make install         # install dependencies with uv
 make env             # create .env from .env.template if it does not exist
 make check           # run Django system checks
 make test            # run Django tests for backgammon and games
-make lint            # check formatting, Python lint, JS syntax and Django
-make typecheck       # experimental: Django-aware mypy (known errors)
+make lint            # check formatting, Python lint and types, JS syntax and Django
+make typecheck       # Django-aware mypy
 make format          # format Python code with black
 make migrate         # apply Django migrations locally
 make run             # start Django dev server
@@ -123,8 +123,8 @@ make test-in-docker  # run tests in Docker
 make lint-in-docker  # run lint checks in Docker
 ```
 
-See [quality checks and regression scenarios](docs/quality-checks.md) for the
-baseline, check scope, known limitations, and two-player smoke procedure.
+See [Python type checking](docs/type-checking.md) for the mypy scope and known
+limitations.
 
 ## Environment Variables
 
