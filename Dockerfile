@@ -28,7 +28,7 @@ WORKDIR /app
 
 COPY --from=requirements-layer /usr/src/requirements.txt .
 
-RUN apk upgrade --no-cache zlib && \
+RUN apk upgrade --no-cache zlib libcrypto3 libssl3 && \
     apk add --no-cache curl && \
     pip install --upgrade pip==${PIP_VERSION} && \
     pip install --timeout "${PIP_DEFAULT_TIMEOUT}" --no-cache-dir --require-hashes -r requirements.txt
