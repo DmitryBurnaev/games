@@ -56,6 +56,8 @@ from .services import (
 )
 
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
+INVALID_INPUT_ERRORS = (KeyError, TypeError, ValueError)
+INVALID_VALUE_ERRORS = (KeyError, ValueError)
 MONTH_LABELS = (
     "янв",
     "фев",
@@ -162,7 +164,7 @@ def lobby_statistics(viewer_id: int) -> dict[str, Any]:
         "months": months,
         "total_duration": statistics_duration_label(total_duration),
         "average_duration": (
-            statistics_duration_label(total_duration / duration_count)
+            game_duration_label(total_duration / duration_count)
             if duration_count
             else None
         ),
@@ -329,7 +331,7 @@ def create_game(request: HttpRequest) -> HttpResponse:
 
     try:
         opponent_id = int(request.POST["opponent"])
-    except KeyError, ValueError:
+    except INVALID_VALUE_ERRORS:
         messages.error(request, "Выберите соперника.")
         return redirect("backgammon:game_list")
     if opponent_id == request.user.pk:
@@ -585,7 +587,7 @@ def move(request: HttpRequest, pk: int) -> JsonResponse:
             game.refresh_from_db()
             payload = serialize_game(game, request.user)
             queue_game_update(game.pk)
-    except KeyError, TypeError, ValueError:
+    except INVALID_INPUT_ERRORS:
         return json_error("Некорректные параметры хода.")
     except GameError as exc:
         return json_error(str(exc))

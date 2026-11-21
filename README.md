@@ -135,23 +135,35 @@ Runtime variables are defined in `.env.template`.
 | `DOCKER_IMAGE`                     | Docker/prod            | `games:latest`                          | Image used by Compose. In production this is written to `.version` by CI.   |
 | `APP_HOST`                         | No                     | `localhost`                             | Informational host value for local/server scripts.                          |
 | `APP_PORT`                         | Yes for Docker/prod    | `8000`                                  | Port exposed by uvicorn and bound on `127.0.0.1`.                           |
+| `APP_VERSION`                      | No                     | `develop`                               | Version shown in the navbar; production release writes it to `.version`.   |
 | `DJANGO_DEBUG`                     | No                     | `false` in template, `true` without env | Enables Django debug mode. Keep `false` in production.                      |
 | `DJANGO_SECRET_KEY`                | Yes for Docker/prod    | none                                    | Django secret key. Generate a strong unique value for production.           |
 | `DJANGO_ALLOWED_HOSTS`             | Yes for Docker/prod    | `localhost,127.0.0.1`                   | Comma-separated Django allowed hosts.                                       |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`      | For HTTPS/domain forms | empty                                   | Comma-separated trusted origins, for example `https://games.example.com`.   |
 | `DJANGO_USE_X_FORWARDED_HOST`      | No                     | `false`                                 | Whether Django should trust `X-Forwarded-Host`.                             |
+| `DJANGO_SESSION_COOKIE_SECURE`     | No                     | `true` when debug is off                | Send the session cookie only over HTTPS.                                    |
+| `DJANGO_CSRF_COOKIE_SECURE`        | No                     | `true` when debug is off                | Send the CSRF cookie only over HTTPS.                                       |
 | `REDIS_URL`                        | Yes for WS/prod        | `redis://redis:6379/0` in Docker        | Redis URL used by Django Channels for WebSocket game state fan-out.         |
 | `BACKGAMMON_DEBUG_TOOLS`           | No                     | follows `DJANGO_DEBUG`                  | Enables development helper buttons in the game UI.                          |
 | `BACKGAMMON_DICE_MODE`             | No                     | `independent`                           | Dice generation mode: `independent` or `player_bag`.                        |
 | `BACKGAMMON_DOUBLES_SELECTION_MODE` | No                     | `FIRST`                                 | Doubles-only selection: `FIRST`, `MIN`, or `MAX` from two independent dice.   |
 | `BACKGAMMON_ANIMATIONS_ENABLED`    | No                     | `true`                                  | Enables checker movement animations in the board UI.                        |
 | `BACKGAMMON_POLL_INTERVAL_MS`      | No                     | `1000`                                  | Browser polling interval for refreshing active game state, in milliseconds. |
+| `BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED` | No               | `true`                                  | Enables quick in-game notifications.                                        |
+| `BACKGAMMON_NOTIFICATION_DISPLAY_MS` | No                   | `4500`                                  | Quick-notification display time in milliseconds; minimum `1000`.           |
 | `BACKGAMMON_CHECKER_COUNT_PRESETS` | No                     | `10,13,15`                              | Comma-separated checker-count choices for the new-game setup dialog.        |
 | `ALLOW_USER_REGISTRATION`          | No                     | `false`                                 | Enables the public signup page and account creation when set to `true`.     |
 | `SQLITE_PATH`                      | Yes for Docker/prod    | `/app/.data/db.sqlite3` in template     | SQLite database path inside the container.                                  |
 
 Local non-Docker runs can omit `.env`; settings default to `.data/db.sqlite3`
 and an in-memory WebSocket channel layer.
+
+Both secure-cookie variables default to `false` with `DJANGO_DEBUG=true` and
+`true` with `DJANGO_DEBUG=false`. Keep them `true` for HTTPS deployments. For
+local Docker over plain HTTP with the template's `DJANGO_DEBUG=false`, explicitly
+set both to `false`; otherwise browsers will not send the cookies over HTTP.
+Boolean settings accept `1`, `true`, `yes`, and `on` (case-insensitive) as true.
+Compose sets `APP_SERVICE` internally to select app, test, or lint mode.
 
 ### Doubles-only selection
 
@@ -188,11 +200,16 @@ DJANGO_SECRET_KEY=replace-with-a-strong-secret
 DJANGO_ALLOWED_HOSTS=games.example.com,localhost,127.0.0.1
 DJANGO_CSRF_TRUSTED_ORIGINS=https://games.example.com
 DJANGO_USE_X_FORWARDED_HOST=false
+DJANGO_SESSION_COOKIE_SECURE=true
+DJANGO_CSRF_COOKIE_SECURE=true
 REDIS_URL=redis://redis:6379/0
 BACKGAMMON_DEBUG_TOOLS=false
 BACKGAMMON_DICE_MODE=independent
+BACKGAMMON_DOUBLES_SELECTION_MODE=FIRST
 BACKGAMMON_ANIMATIONS_ENABLED=true
 BACKGAMMON_POLL_INTERVAL_MS=1000
+BACKGAMMON_QUICK_NOTIFICATIONS_ENABLED=true
+BACKGAMMON_NOTIFICATION_DISPLAY_MS=4500
 BACKGAMMON_CHECKER_COUNT_PRESETS=5,10,15
 ALLOW_USER_REGISTRATION=false
 
