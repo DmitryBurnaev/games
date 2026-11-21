@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - "main"
-      - "feature/49-project-quality-checks" # Temporary: validate scan changes before merge.
+      - "bugfix/53-session-inactivity" # Temporary: validate scan changes before merge.
   schedule:
     - cron: "0 0 * * 1"
 
